@@ -19,8 +19,12 @@ namespace DLS.SaveSystem
 			projectDescription.DLSVersion_LastSaved = Main.DLSVersion.ToString();
 			projectDescription.DLSVersion_EarliestCompatible = Main.DLSVersion_EarliestCompatible.ToString();
 
+			// Salvamento local
 			string data = Serializer.SerializeProjectDescription(projectDescription);
 			WriteToFile(data, SavePaths.GetProjectDescriptionPath(projectDescription.ProjectName));
+
+			// Sincronização cloud
+			SaverCloudExtension.SyncProjectToCloud(projectDescription);
 		}
 
 		public static void RenameProject(string nameOld, string nameNew)
@@ -38,13 +42,16 @@ namespace DLS.SaveSystem
 			descNew.ProjectName = nameDuplicate;
 			SaveProjectDescription(descNew);
 		}
-
+		
 		public static void SaveChip(ChipDescription chipDescription, string projectName)
 		{
+			// Salvamento local
 			string serializedDescription = CreateSerializedChipDescription(chipDescription);
 			WriteToFile(serializedDescription, GetChipFilePath(chipDescription.Name, projectName));
-		}
 
+			// Sincronização cloud
+			SaverCloudExtension.SyncChipToCloud(chipDescription, projectName);
+		}
 
 		public static ChipDescription CloneChipDescription(ChipDescription desc)
 		{
@@ -71,6 +78,9 @@ namespace DLS.SaveSystem
 			{
 				File.Delete(filePath);
 			}
+
+			// Sincronização cloud - deleta do Firebase
+			SaverCloudExtension.DeleteChipFromCloud(chipName, projectName);
 		}
 
 		public static void DeleteProject(string projectName, bool backupInDeletedFolder = true)
@@ -84,7 +94,9 @@ namespace DLS.SaveSystem
 				deletedPath = SaveUtils.EnsureUniqueDirectoryName(deletedPath);
 				Directory.Move(projectPath, deletedPath);
 			}
-			//Directory.Move
+
+			// Sincronização cloud - deleta do Firebase
+			SaverCloudExtension.DeleteProjectFromCloud(projectName);
 		}
 
 		public static bool HasUnsavedChanges(ChipDescription lastSaved, ChipDescription current)

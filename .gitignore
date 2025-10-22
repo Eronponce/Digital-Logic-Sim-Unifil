@@ -69,5 +69,12 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Firebase package (can be reinstalled via Unity Package Manager)
+/[Aa]ssets/[Ff]irebase/
+
+# External Dependency Manager (part of Firebase setup)
+/[Aa]ssets/[Ee]xternal[Dd]ependency[Mm]anager/
+
 /.idea
 /.vsconfig

@@ -39,7 +39,8 @@ namespace DLS.Graphics
 			FormatButtonString("Open Project"),
 			FormatButtonString("Settings"),
 			FormatButtonString("About"),
-			FormatButtonString("Quit")
+			FormatButtonString("Quit"),
+			FormatButtonString("Logout")
 		};
 
 		static readonly string[] openProjectButtonNames =
@@ -100,6 +101,9 @@ namespace DLS.Graphics
 
 			switch (activeMenuScreen)
 			{
+				case MenuScreen.Login:
+					DrawLoginScreen();
+					break;
 				case MenuScreen.Main:
 					DrawMainScreen();
 					break;
@@ -133,9 +137,33 @@ namespace DLS.Graphics
 
 		public static void OnMenuOpened()
 		{
-			activeMenuScreen = MenuScreen.Main;
+			LoginMenu.Initialize();
+
+			// Check if user needs to login
+			if (LoginMenu.NeedsAuthentication())
+			{
+				activeMenuScreen = MenuScreen.Login;
+			}
+			else
+			{
+				activeMenuScreen = MenuScreen.Main;
+			}
+
 			activePopup = PopupKind.None;
 			selectedProjectIndex = -1;
+		}
+
+		static void DrawLoginScreen()
+		{
+			if (activePopup != PopupKind.None) return;
+
+			LoginMenu.DrawFullLoginScreen();
+
+			// If user successfully logged in or chose offline mode, go to main menu
+			if (LoginMenu.CanProceedToMainMenu())
+			{
+				activeMenuScreen = MenuScreen.Main;
+			}
 		}
 
 		static void DrawMainScreen()
@@ -145,7 +173,11 @@ namespace DLS.Graphics
 			DrawSettings.UIThemeDLS theme = DrawSettings.ActiveUITheme;
 			float buttonWidth = 15;
 
-			int buttonIndex = UI.VerticalButtonGroup(menuButtonNames, theme.MainMenuButtonTheme, UI.Centre + Vector2.up * 6, new Vector2(buttonWidth, 0), false, true, 1);
+			// Decide quais botões mostrar baseado no estado de autenticação
+			bool isLoggedIn = DLS.CloudSync.FirebaseAuthManager.IsLoggedIn;
+			string[] buttonsToShow = isLoggedIn ? menuButtonNames : menuButtonNames.Take(5).ToArray();
+
+			int buttonIndex = UI.VerticalButtonGroup(buttonsToShow, theme.MainMenuButtonTheme, UI.Centre + Vector2.up * 6, new Vector2(buttonWidth, 0), false, true, 1);
 
 			if (buttonIndex == 0 || KeyboardShortcuts.MainMenu_NewProjectShortcutTriggered) // New project
 			{
@@ -171,6 +203,11 @@ namespace DLS.Graphics
 			else if (buttonIndex == 4 || KeyboardShortcuts.MainMenu_QuitShortcutTriggered) // Quit
 			{
 				Quit();
+			}
+			else if (buttonIndex == 5) // Logout
+			{
+				DLS.CloudSync.FirebaseAuthManager.SignOut();
+				activeMenuScreen = MenuScreen.Login;
 			}
 		}
 
@@ -491,6 +528,7 @@ namespace DLS.Graphics
 
 		enum MenuScreen
 		{
+			Login,
 			Main,
 			LoadProject,
 			Settings,
