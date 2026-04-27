@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Planning"
+  short_description: "Planeja sync, dados e entrega do repo"
+  default_prompt: "Use $repo-planning para analisar arquitetura, sincronizacao, analytics e roadmap deste repositorio."

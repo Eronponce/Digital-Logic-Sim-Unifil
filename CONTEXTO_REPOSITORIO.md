@@ -1,4 +1,6 @@
-# CONTEXTO DO REPOSITÓRIO: DIGITAL LOGIC SIMULATOR
+# CONTEXTO DO REPOSITORIO: DIGITAL LOGIC SIMULATOR
+
+> Atualizacao 2026-04-08: este arquivo continua util como visao historica, mas nao e mais a fonte canonica do repositorio. Para o estado atual, consulte `AGENTS.md` e os arquivos em `docs/`.
 
 ## INFORMAÇÕES GERAIS
 

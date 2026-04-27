@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using DLS.CloudSync;
 using DLS.Description;
 using DLS.Game;
 using DLS.SaveSystem;
@@ -33,15 +34,28 @@ namespace DLS.Graphics
 		static readonly UI.ScrollViewDrawContentFunc loadProjectScrollViewDrawer = DrawAllProjectsInScrollView;
 
 
-		static readonly string[] menuButtonNames =
+		static readonly MainMenuAction[] loggedInActions =
 		{
-			FormatButtonString("New Project"),
-			FormatButtonString("Open Project"),
-			FormatButtonString("Settings"),
-			FormatButtonString("About"),
-			FormatButtonString("Quit"),
-			FormatButtonString("Logout")
+			MainMenuAction.NewProject,
+			MainMenuAction.OpenProject,
+			MainMenuAction.Settings,
+			MainMenuAction.About,
+			MainMenuAction.Logout,
+			MainMenuAction.Quit
 		};
+
+		static readonly MainMenuAction[] offlineActions =
+		{
+			MainMenuAction.SignIn,
+			MainMenuAction.NewProject,
+			MainMenuAction.OpenProject,
+			MainMenuAction.Settings,
+			MainMenuAction.About,
+			MainMenuAction.Quit
+		};
+
+		static readonly string[] loggedInButtonNames = loggedInActions.Select(ActionLabel).ToArray();
+		static readonly string[] offlineButtonNames = offlineActions.Select(ActionLabel).ToArray();
 
 		static readonly string[] openProjectButtonNames =
 		{
@@ -82,8 +96,14 @@ namespace DLS.Graphics
 		public static void Draw()
 		{
 			Simulator.UpdateInPausedState();
-			
-			if (KeyboardShortcuts.CancelShortcutTriggered && activePopup == PopupKind.None)
+
+			if (LoginMenu.NeedsAuthentication() && activeMenuScreen != MenuScreen.Login)
+			{
+				activeMenuScreen = MenuScreen.Login;
+				activePopup = PopupKind.None;
+			}
+
+			if (KeyboardShortcuts.CancelShortcutTriggered && activePopup == PopupKind.None && activeMenuScreen != MenuScreen.Login)
 			{
 				BackToMain();
 			}
@@ -133,6 +153,8 @@ namespace DLS.Graphics
 					DrawNamePopup();
 					break;
 			}
+
+			LoadingOverlay.Draw();
 		}
 
 		public static void OnMenuOpened()
@@ -174,42 +196,88 @@ namespace DLS.Graphics
 			float buttonWidth = 15;
 
 			// Decide quais botões mostrar baseado no estado de autenticação
-			bool isLoggedIn = DLS.CloudSync.FirebaseAuthManager.IsLoggedIn;
-			string[] buttonsToShow = isLoggedIn ? menuButtonNames : menuButtonNames.Take(5).ToArray();
+			bool isLoggedIn = FirebaseAuthManager.IsLoggedIn;
 
+			if (isLoggedIn)
+			{
+				string profileLabel = $"{FirebaseAuthManager.CurrentUserProfile.DisplayName} ({FirebaseAuthManager.CurrentUserRoleLabel})";
+				UI.DrawText(profileLabel, theme.FontRegular, theme.FontSizeRegular * 0.95f, UI.Centre + Vector2.up * 15f, Anchor.Centre, Color.gray);
+				UI.DrawText(FirebaseAuthManager.UserEmail, theme.FontRegular, theme.FontSizeRegular * 0.8f, UI.Centre + Vector2.up * 13.4f, Anchor.Centre, new Color(1f, 1f, 1f, 0.65f));
+
+				if (!FirebaseAuthManager.CurrentUserProfile.IsTeacher
+					&& (!string.IsNullOrWhiteSpace(FirebaseAuthManager.CurrentUserProfile.TeacherName)
+						|| !string.IsNullOrWhiteSpace(FirebaseAuthManager.CurrentUserProfile.RegistrationNumber)))
+				{
+					string studentInfo = $"Professor: {FirebaseAuthManager.CurrentUserProfile.TeacherName}  |  Matricula: {FirebaseAuthManager.CurrentUserProfile.RegistrationNumber}";
+					UI.DrawText(studentInfo, theme.FontRegular, theme.FontSizeRegular * 0.75f, UI.Centre + Vector2.up * 11.9f, Anchor.Centre, new Color(1f, 1f, 1f, 0.55f));
+				}
+			}
+			else
+			{
+				UI.DrawText("Offline mode", theme.FontRegular, theme.FontSizeRegular * 0.95f, UI.Centre + Vector2.up * 15f, Anchor.Centre, Color.gray);
+				UI.DrawText("Cloud sync is paused until you sign in", theme.FontRegular, theme.FontSizeRegular * 0.8f, UI.Centre + Vector2.up * 13f, Anchor.Centre, new Color(1f, 1f, 1f, 0.65f));
+			}
+
+			MainMenuAction[] actions = isLoggedIn ? loggedInActions : offlineActions;
+			string[] buttonsToShow = isLoggedIn ? loggedInButtonNames : offlineButtonNames;
 			int buttonIndex = UI.VerticalButtonGroup(buttonsToShow, theme.MainMenuButtonTheme, UI.Centre + Vector2.up * 6, new Vector2(buttonWidth, 0), false, true, 1);
 
-			if (buttonIndex == 0 || KeyboardShortcuts.MainMenu_NewProjectShortcutTriggered) // New project
+			MainMenuAction? triggered = null;
+			if (buttonIndex >= 0 && buttonIndex < actions.Length) triggered = actions[buttonIndex];
+			else if (KeyboardShortcuts.MainMenu_NewProjectShortcutTriggered) triggered = MainMenuAction.NewProject;
+			else if (KeyboardShortcuts.MainMenu_OpenProjectShortcutTriggered) triggered = MainMenuAction.OpenProject;
+			else if (KeyboardShortcuts.MainMenu_SettingsShortcutTriggered) triggered = MainMenuAction.Settings;
+			else if (KeyboardShortcuts.MainMenu_QuitShortcutTriggered) triggered = MainMenuAction.Quit;
+
+			if (triggered.HasValue) HandleMainMenuAction(triggered.Value);
+		}
+
+		static void HandleMainMenuAction(MainMenuAction action)
+		{
+			switch (action)
 			{
-				RefreshLoadedProjects();
-				activePopup = PopupKind.NamePopup_NewProject;
-			}
-			else if (buttonIndex == 1 || KeyboardShortcuts.MainMenu_OpenProjectShortcutTriggered) // Load project
-			{
-				RefreshLoadedProjects();
-				selectedProjectIndex = -1;
-				activeMenuScreen = MenuScreen.LoadProject;
-			}
-			else if (buttonIndex == 2 || KeyboardShortcuts.MainMenu_SettingsShortcutTriggered) // Settings
-			{
-				EditedAppSettings = Main.ActiveAppSettings;
-				activeMenuScreen = MenuScreen.Settings;
-				OnSettingsMenuOpened();
-			}
-			else if (buttonIndex == 3) // About
-			{
-				activeMenuScreen = MenuScreen.About;
-			}
-			else if (buttonIndex == 4 || KeyboardShortcuts.MainMenu_QuitShortcutTriggered) // Quit
-			{
-				Quit();
-			}
-			else if (buttonIndex == 5) // Logout
-			{
-				DLS.CloudSync.FirebaseAuthManager.SignOut();
-				activeMenuScreen = MenuScreen.Login;
+				case MainMenuAction.NewProject:
+					RefreshLoadedProjects();
+					activePopup = PopupKind.NamePopup_NewProject;
+					break;
+				case MainMenuAction.OpenProject:
+					RefreshLoadedProjects();
+					selectedProjectIndex = -1;
+					activeMenuScreen = MenuScreen.LoadProject;
+					break;
+				case MainMenuAction.Settings:
+					EditedAppSettings = Main.ActiveAppSettings;
+					activeMenuScreen = MenuScreen.Settings;
+					OnSettingsMenuOpened();
+					break;
+				case MainMenuAction.About:
+					activeMenuScreen = MenuScreen.About;
+					break;
+				case MainMenuAction.Logout:
+					FirebaseAuthManager.SignOut();
+					activeMenuScreen = MenuScreen.Login;
+					break;
+				case MainMenuAction.SignIn:
+					LoginMenu.ReturnToSignIn();
+					activeMenuScreen = MenuScreen.Login;
+					break;
+				case MainMenuAction.Quit:
+					Quit();
+					break;
 			}
 		}
+
+		static string ActionLabel(MainMenuAction action) => action switch
+		{
+			MainMenuAction.NewProject => FormatButtonString("New Project"),
+			MainMenuAction.OpenProject => FormatButtonString("Open Project"),
+			MainMenuAction.Settings => FormatButtonString("Settings"),
+			MainMenuAction.About => FormatButtonString("About"),
+			MainMenuAction.Logout => FormatButtonString("Logout"),
+			MainMenuAction.SignIn => FormatButtonString("Sign In"),
+			MainMenuAction.Quit => FormatButtonString("Quit"),
+			_ => string.Empty
+		};
 
 		static void DrawLoadProjectScreen()
 		{
@@ -305,7 +373,7 @@ namespace DLS.Graphics
 		static void BackToMain()
 		{
 			UI.GetInputFieldState(ID_ProjectNameInput).ClearText();
-			activeMenuScreen = MenuScreen.Main;
+			activeMenuScreen = LoginMenu.NeedsAuthentication() ? MenuScreen.Login : MenuScreen.Main;
 			activePopup = PopupKind.None;
 		}
 
@@ -542,6 +610,17 @@ namespace DLS.Graphics
 			NamePopup_RenameProject,
 			NamePopup_DuplicateProject,
 			NamePopup_NewProject
+		}
+
+		enum MainMenuAction
+		{
+			NewProject,
+			OpenProject,
+			Settings,
+			About,
+			Logout,
+			SignIn,
+			Quit
 		}
 	}
 }

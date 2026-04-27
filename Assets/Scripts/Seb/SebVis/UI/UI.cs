@@ -16,6 +16,7 @@ namespace Seb.Vis.UI
 		public delegate void ScrollViewDrawElementFunc(Vector2 topLeft, float width, int index, bool isLayoutOnly);
 
 		const string MString = "M";
+		const char MaskChar = '•'; // bullet '•' used to mask password input
 
 		public const float Width = 100;
 		public const float HalfWidth = Width / 2;
@@ -349,7 +350,7 @@ namespace Seb.Vis.UI
 
 		public static Vector2 CalculateTextSize(ReadOnlySpan<char> text, float fontSize, FontType font) => Draw.CalculateTextBoundsSize(text, fontSize, font);
 
-		public static InputFieldState InputField(UIHandle id, InputFieldTheme theme, Vector2 pos, Vector2 size, string defaultText, Anchor anchor, float textPad, Func<string, bool> validation = null, bool forceFocus = false)
+		public static InputFieldState InputField(UIHandle id, InputFieldTheme theme, Vector2 pos, Vector2 size, string defaultText, Anchor anchor, float textPad, Func<string, bool> validation = null, bool forceFocus = false, string displayTextOverride = null, bool maskContents = false)
 		{
 			InputFieldState state = GetInputFieldState(id);
 
@@ -461,19 +462,22 @@ namespace Seb.Vis.UI
 				{
 					float fontSize_ss = theme.fontSize * scale;
 					bool showDefaultText = string.IsNullOrEmpty(state.text) || !Application.isPlaying;
-					string displayString = showDefaultText ? defaultText : state.text;
+					string displayString;
+					if (showDefaultText) displayString = defaultText;
+					else if (maskContents) displayString = new string(MaskChar, state.text.Length);
+					else displayString = displayTextOverride ?? state.text;
 
 					Color textCol = showDefaultText ? theme.defaultTextCol : theme.textCol;
 					Draw.Text(theme.font, displayString, fontSize_ss, textCentreLeft_ss, Anchor.TextCentreLeft, textCol);
 
 					if (Application.isPlaying)
 					{
-						Vector2 boundsSizeUpToCaret = Draw.CalculateTextBoundsSize(displayString.AsSpan(0, state.cursorBeforeCharIndex), theme.fontSize, theme.font);
+						Vector2 boundsSizeUpToCaret = Draw.CalculateTextBoundsSize(displayString.AsSpan(0, Mathf.Min(state.cursorBeforeCharIndex, displayString.Length)), theme.fontSize, theme.font);
 
 						// Draw selection box
 						if (state.isSelecting)
 						{
-							Vector2 boundsSizeUpToSelect = Draw.CalculateTextBoundsSize(displayString.AsSpan(0, state.selectionStartIndex), theme.fontSize, theme.font);
+							Vector2 boundsSizeUpToSelect = Draw.CalculateTextBoundsSize(displayString.AsSpan(0, Mathf.Min(state.selectionStartIndex, displayString.Length)), theme.fontSize, theme.font);
 							Color col = new(0.2f, 0.6f, 1, 0.5f);
 							float startX = textCentreLeft_ss.x + boundsSizeUpToCaret.x * scale;
 							float endX = textCentreLeft_ss.x + boundsSizeUpToSelect.x * scale;
@@ -528,8 +532,10 @@ namespace Seb.Vis.UI
 
 			int CharIndexBeforeMouse(float textLeft)
 			{
-				//  (note: currently assumes monospaced)
-				float textBoundsWidth = Draw.CalculateTextBoundsSize(state.text, theme.fontSize, theme.font).x;
+				ReadOnlySpan<char> measureText = maskContents
+					? new string(MaskChar, state.text.Length).AsSpan()
+					: state.text.AsSpan();
+				float textBoundsWidth = Draw.CalculateTextBoundsSize(measureText, theme.fontSize, theme.font).x;
 				float textRight = textLeft + textBoundsWidth * scale;
 				float t = Mathf.InverseLerp(textLeft, textRight, InputHelper.MousePos.x);
 				return Mathf.RoundToInt(t * state.text.Length);

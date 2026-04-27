@@ -1,0 +1,21 @@
+{
+  "name": "DLS.EditorTests",
+  "references": [
+    "GUID:06b859b54912bd449812ba95518ecd6b",
+    "GUID:2b65bcfb6aad3f1459e94b356ff58293"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

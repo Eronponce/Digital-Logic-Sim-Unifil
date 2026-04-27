@@ -1,73 +1,70 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using DLS.Description;
 using DLS.CloudSync;
+using DLS.Description;
 using UnityEngine;
 
 namespace DLS.SaveSystem
 {
 	/// <summary>
-	/// Extensão do Saver para sincronização com cloud
+	/// Extensão do Saver para sincronização com cloud.
 	/// </summary>
 	public static class SaverCloudExtension
 	{
-		/// <summary>
-		/// Sincroniza projeto com Firebase (se logado)
-		/// </summary>
 		public static void SyncProjectToCloud(ProjectDescription project)
 		{
-			if (!FirebaseAuthManager.IsLoggedIn) return;
+			if (!FirebaseAuthManager.IsLoggedIn)
+			{
+				return;
+			}
 
 			FirestoreDataManager.SaveProject(project,
 				onSuccess: () => Debug.Log($"[Cloud] Project '{project.ProjectName}' synced"),
-				onError: (error) => Debug.LogWarning($"[Cloud] Failed to sync project: {error}")
+				onError: error => Debug.LogWarning($"[Cloud] Failed to sync project: {error}")
 			);
 		}
 
-		/// <summary>
-		/// Sincroniza chip com Firebase (se logado)
-		/// </summary>
 		public static void SyncChipToCloud(ChipDescription chip, string projectName)
 		{
-			if (!FirebaseAuthManager.IsLoggedIn) return;
+			if (!FirebaseAuthManager.IsLoggedIn)
+			{
+				return;
+			}
 
 			FirestoreDataManager.SaveChip(chip, projectName,
 				onSuccess: () => Debug.Log($"[Cloud] Chip '{chip.Name}' synced"),
-				onError: (error) => Debug.LogWarning($"[Cloud] Failed to sync chip: {error}")
+				onError: error => Debug.LogWarning($"[Cloud] Failed to sync chip: {error}")
 			);
 		}
 
-		/// <summary>
-		/// Deleta projeto do Firebase (se logado)
-		/// </summary>
 		public static void DeleteProjectFromCloud(string projectName)
 		{
-			if (!FirebaseAuthManager.IsLoggedIn) return;
+			if (!FirebaseAuthManager.IsLoggedIn)
+			{
+				return;
+			}
 
 			FirestoreDataManager.DeleteProject(projectName,
 				onSuccess: () => Debug.Log($"[Cloud] Project '{projectName}' deleted from cloud"),
-				onError: (error) => Debug.LogWarning($"[Cloud] Failed to delete project: {error}")
+				onError: error => Debug.LogWarning($"[Cloud] Failed to delete project: {error}")
 			);
 		}
 
-		/// <summary>
-		/// Deleta chip do Firebase (se logado)
-		/// </summary>
 		public static void DeleteChipFromCloud(string chipName, string projectName)
 		{
-			if (!FirebaseAuthManager.IsLoggedIn) return;
+			if (!FirebaseAuthManager.IsLoggedIn)
+			{
+				return;
+			}
 
 			FirestoreDataManager.DeleteChip(chipName, projectName,
 				onSuccess: () => Debug.Log($"[Cloud] Chip '{chipName}' deleted from cloud"),
-				onError: (error) => Debug.LogWarning($"[Cloud] Failed to delete chip: {error}")
+				onError: error => Debug.LogWarning($"[Cloud] Failed to delete chip: {error}")
 			);
 		}
 
-		/// <summary>
-		/// Sincroniza TODOS os projetos locais para o Firebase
-		/// Usado principalmente no logout para garantir que tudo foi salvo
-		/// </summary>
 		public static void SyncAllProjectsToCloud(Action onComplete = null)
 		{
 			if (!FirebaseAuthManager.IsLoggedIn)
@@ -77,9 +74,7 @@ namespace DLS.SaveSystem
 				return;
 			}
 
-			// Carrega todos os projetos locais
 			ProjectDescription[] localProjects = Loader.LoadAllProjectDescriptions();
-
 			if (localProjects.Length == 0)
 			{
 				Debug.Log("[Cloud] No projects to sync");
@@ -87,46 +82,55 @@ namespace DLS.SaveSystem
 				return;
 			}
 
-			Debug.Log($"[Cloud] Starting sync of {localProjects.Length} projects...");
+			Debug.Log($"[Cloud] Starting full sync of {localProjects.Length} projects...");
 
-			int syncedCount = 0;
+			int processedCount = 0;
 			int totalToSync = localProjects.Length;
 
-			foreach (ProjectDescription project in localProjects)
+			foreach (ProjectDescription localProject in localProjects)
 			{
-				FirestoreDataManager.SaveProject(project,
-					onSuccess: () =>
+				try
+				{
+					ChipDescription[] localChips = Loader.LoadAvailableChipDescriptions(localProject, out string[] missingChipNames);
+					if (missingChipNames.Length > 0)
 					{
-						syncedCount++;
-						Debug.Log($"[Cloud] Synced {syncedCount}/{totalToSync}: {project.ProjectName}");
-
-						// Quando todos forem sincronizados
-						if (syncedCount >= totalToSync)
-						{
-							Debug.Log($"[Cloud] ✅ All {totalToSync} projects synced successfully!");
-							onComplete?.Invoke();
-						}
-					},
-					onError: (error) =>
-					{
-						syncedCount++;
-						Debug.LogError($"[Cloud] Failed to sync '{project.ProjectName}': {error}");
-
-						// Continua mesmo com erro
-						if (syncedCount >= totalToSync)
-						{
-							Debug.LogWarning($"[Cloud] Sync completed with errors ({totalToSync} projects processed)");
-							onComplete?.Invoke();
-						}
+						Debug.LogWarning($"[Cloud] Project '{localProject.ProjectName}' references {missingChipNames.Length} missing chips. Syncing available chips only: {string.Join(", ", missingChipNames)}");
 					}
-				);
+
+					ProjectDescription projectToSync = SyncProjectChipIndex(localProject, localChips);
+
+					FirestoreDataManager.SaveProjectBundle(projectToSync, localChips,
+						onSuccess: () => NotifySyncCompleted(projectToSync.ProjectName, null),
+						onError: error => NotifySyncCompleted(projectToSync.ProjectName, error)
+					);
+				}
+				catch (Exception ex)
+				{
+					NotifySyncCompleted(localProject.ProjectName, ex.Message);
+				}
+			}
+
+			void NotifySyncCompleted(string projectName, string error)
+			{
+				processedCount++;
+
+				if (string.IsNullOrWhiteSpace(error))
+				{
+					Debug.Log($"[Cloud] Synced {processedCount}/{totalToSync}: {projectName}");
+				}
+				else
+				{
+					Debug.LogError($"[Cloud] Failed to sync '{projectName}': {error}");
+				}
+
+				if (processedCount >= totalToSync)
+				{
+					Debug.Log($"[Cloud] Full sync finished ({totalToSync} projects processed)");
+					onComplete?.Invoke();
+				}
 			}
 		}
 
-		/// <summary>
-		/// Carrega TODOS os projetos do Firebase e salva localmente
-		/// Usado no login para restaurar projetos do usuário
-		/// </summary>
 		public static void LoadAllProjectsFromCloud(Action<int> onComplete = null)
 		{
 			if (!FirebaseAuthManager.IsLoggedIn)
@@ -136,16 +140,15 @@ namespace DLS.SaveSystem
 				return;
 			}
 
-			Debug.Log("[Cloud] Loading projects from cloud...");
+			Debug.Log("[Cloud] Loading project bundles from cloud...");
 
-			FirestoreDataManager.LoadAllProjects(
-				onSuccess: (cloudProjects) =>
+			FirestoreDataManager.LoadAllProjectBundles(
+				onSuccess: bundles =>
 				{
-					Debug.Log($"[Cloud] Found {cloudProjects.Count} projects in cloud");
+					Debug.Log($"[Cloud] Found {bundles.Count} project bundles in cloud");
 
-					if (cloudProjects.Count == 0)
+					if (bundles.Count == 0)
 					{
-						Debug.Log("[Cloud] No projects to download");
 						onComplete?.Invoke(0);
 						return;
 					}
@@ -153,51 +156,83 @@ namespace DLS.SaveSystem
 					int loadedCount = 0;
 					int skippedCount = 0;
 
-					foreach (ProjectDescription cloudProject in cloudProjects)
+					foreach (CloudProjectBundle bundle in bundles)
 					{
 						try
 						{
-							// Verifica se já existe localmente (não sobrescreve)
-							if (Loader.ProjectExists(cloudProject.ProjectName))
-							{
-								// Compara datas - só sobrescreve se cloud for mais recente
-								ProjectDescription localProject = Loader.LoadProjectDescription(cloudProject.ProjectName);
+							ProjectDescription cloudProject = SyncProjectChipIndex(bundle.ProjectDescription, bundle.Chips);
+							bool shouldRestore = !Loader.ProjectExists(cloudProject.ProjectName);
 
-								if (cloudProject.LastSaveTime > localProject.LastSaveTime)
-								{
-									Debug.Log($"[Cloud] Updating '{cloudProject.ProjectName}' (cloud version is newer)");
-									Saver.SaveProjectDescription(cloudProject);
-									loadedCount++;
-								}
-								else
-								{
-									Debug.Log($"[Cloud] Skipping '{cloudProject.ProjectName}' (local version is newer or equal)");
-									skippedCount++;
-								}
+							if (!shouldRestore)
+							{
+								ProjectDescription localProject = Loader.LoadProjectDescription(cloudProject.ProjectName);
+								bool localChipDataComplete = Loader.ProjectHasCompleteLocalChipData(localProject);
+								shouldRestore = CloudSyncPolicy.ShouldRestoreCloudProject(localProject, cloudProject, localChipDataComplete);
+							}
+
+							if (shouldRestore)
+							{
+								RestoreProjectBundleLocally(cloudProject, bundle.Chips);
+								loadedCount++;
+								Debug.Log($"[Cloud] Restored '{cloudProject.ProjectName}' with {bundle.Chips.Count} chips");
 							}
 							else
 							{
-								// Projeto não existe localmente - baixa do cloud
-								Debug.Log($"[Cloud] Downloading new project: '{cloudProject.ProjectName}'");
-								Saver.SaveProjectDescription(cloudProject);
-								loadedCount++;
+								skippedCount++;
+								Debug.Log($"[Cloud] Skipped '{cloudProject.ProjectName}' (local version is up to date)");
 							}
 						}
 						catch (Exception ex)
 						{
-							Debug.LogError($"[Cloud] Failed to save project '{cloudProject.ProjectName}': {ex.Message}");
+							Debug.LogError($"[Cloud] Failed to restore project bundle: {ex.Message}");
 						}
 					}
 
-					Debug.Log($"[Cloud] ✅ Projects loaded: {loadedCount} new/updated, {skippedCount} skipped");
+					Debug.Log($"[Cloud] Project restore finished: {loadedCount} loaded, {skippedCount} skipped");
 					onComplete?.Invoke(loadedCount);
 				},
-				onError: (error) =>
+				onError: error =>
 				{
 					Debug.LogError($"[Cloud] Failed to load projects: {error}");
 					onComplete?.Invoke(0);
 				}
 			);
+		}
+
+		static ProjectDescription SyncProjectChipIndex(ProjectDescription project, IReadOnlyList<ChipDescription> chips)
+		{
+			string[] actualChipNames = chips?
+				.Select(chip => chip.Name)
+				.Distinct(ChipDescription.NameComparer)
+				.ToArray()
+				?? Array.Empty<string>();
+
+			string[] currentChipNames = project.AllCustomChipNames ?? Array.Empty<string>();
+			bool alreadyInSync = currentChipNames.Length == actualChipNames.Length
+				&& !currentChipNames.Except(actualChipNames, ChipDescription.NameComparer).Any();
+
+			if (!alreadyInSync)
+			{
+				project.AllCustomChipNames = actualChipNames;
+			}
+
+			return project;
+		}
+
+		static void RestoreProjectBundleLocally(ProjectDescription project, IReadOnlyList<ChipDescription> chips)
+		{
+			string chipsPath = SavePaths.GetChipsPath(project.ProjectName);
+			if (Directory.Exists(chipsPath))
+			{
+				Directory.Delete(chipsPath, true);
+			}
+
+			Saver.SaveProjectDescription(project, syncToCloud: false, updateSaveMetadata: false);
+
+			foreach (ChipDescription chip in chips)
+			{
+				Saver.SaveChip(chip, project.ProjectName, syncToCloud: false);
+			}
 		}
 	}
 }

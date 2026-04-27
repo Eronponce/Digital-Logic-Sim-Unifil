@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "646548181551",
-    "project_id": "digital-logic-sim-unifil-fb0b8",
-    "storage_bucket": "digital-logic-sim-unifil-fb0b8.firebasestorage.app"
+    "project_number": "979038201351",
+    "project_id": "logisim-eron",
+    "storage_bucket": "logisim-eron.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:646548181551:android:556bfc1a55a8112b8eacda",
+        "mobilesdk_app_id": "1:979038201351:android:463614ca97b7b4c6c3aca2",
         "android_client_info": {
           "package_name": "com.sebastianlague.digitallogicsim"
         }
       },
       "oauth_client": [
         {
-          "client_id": "646548181551-ir0g3kggop9a8rgvk93iatc6vlkedqhc.apps.googleusercontent.com",
+          "client_id": "979038201351-s0mv8h3bi7jqal88nq6ps97mdfn5mdbg.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBRWvDjyptD_aQXTqXE64yvXrfNX3PyrnQ"
+          "current_key": "AIzaSyAFC28Zd89jZ9nbAT5u5I5379ed_U6Rmjo"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "646548181551-ir0g3kggop9a8rgvk93iatc6vlkedqhc.apps.googleusercontent.com",
+              "client_id": "979038201351-s0mv8h3bi7jqal88nq6ps97mdfn5mdbg.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

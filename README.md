@@ -1,7 +1,35 @@
-# Digital-Logic-Sim
-A minimalistic digital logic simulator, which I created as part of my video series: [Exploring How Computers Work](https://www.youtube.com/playlist?list=PLFt_AvWsXl0dPhqVsKt1Ni_46ARyiCGSq).
-<br>You can find the latest builds over [here](https://sebastian.itch.io/digital-logic-sim).<br>
+# Digital Logic Sim - Unifil
 
-Note: Pull requests are welcome, but please be aware that I'm far more likely to merge performance/ux improvements and bug fixes than new built-in chips or features. I do hope to provide some form of mod support in the future, but don't have any concrete plans for it right now. If you'd like to ask or discuss anything relating to development with me/others, check out [Discussions/Dev](https://github.com/SebLague/Digital-Logic-Sim/discussions/categories/dev).
+Fork/adaptacao do projeto original `Digital Logic Sim`, com foco atual em sincronizacao cloud, autenticacao e futura analise do que os alunos fazem no simulador.
 
-[![IMAGE ALT TEXT HERE](https://raw.githubusercontent.com/SebLague/Images/master/Exploring%20how%20computers%20work.jpg)](http://www.youtube.com/watch?v=QZwneRb-zqA)
+## Estado atual
+
+- Engine: `Unity 6000.0.46f1`
+- Cena principal: `Assets/Build/DLS.unity`
+- Entrada de runtime: `Assets/Scripts/Game/Main/UnityMain.cs`
+- Persistencia local: JSON em disco
+- Persistencia cloud atual: Firebase Auth + Firestore
+
+## Rodando o projeto
+
+1. Abra o repositorio no `Unity 6000.0.46f1`.
+2. Abra a cena `Assets/Build/DLS.unity`.
+3. No editor, habilite `openInMainMenu` no objeto `Main` se quiser testar login/menu ao inves do projeto de teste.
+4. Pressione Play.
+
+## Documentacao canonica
+
+- `AGENTS.md`
+- `docs/00-INDEX.md`
+- `docs/01-ARQUITETURA-E-EXECUCAO.md`
+- `docs/02-ESTADO-ATUAL-DOS-DADOS.md`
+- `docs/03-OPCOES-DE-BACKEND-E-CUSTO.md`
+- `docs/04-ROADMAP-IMPLEMENTACAO.md`
+
+## Observacao importante
+
+Os arquivos Markdown antigos da raiz continuam uteis como historico, mas podem divergir do codigo atual em pontos como versao do Unity, cena principal, caminho de save e comportamento real da sincronizacao Firebase.
+
+## Projeto original
+
+O projeto original foi criado por Sebastian Lague como parte da serie [Exploring How Computers Work](https://www.youtube.com/playlist?list=PLFt_AvWsXl0dPhqVsKt1Ni_46ARyiCGSq).

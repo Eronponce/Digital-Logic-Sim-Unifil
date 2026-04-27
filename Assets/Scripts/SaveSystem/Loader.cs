@@ -60,6 +60,10 @@ namespace DLS.SaveSystem
 		public static ProjectDescription[] LoadAllProjectDescriptions()
 		{
 			List<ProjectDescription> projectDescriptions = new();
+			if (!Directory.Exists(SavePaths.ProjectsPath))
+			{
+				return Array.Empty<ProjectDescription>();
+			}
 
 			foreach (string dir in Directory.EnumerateDirectories(SavePaths.ProjectsPath))
 			{
@@ -78,24 +82,102 @@ namespace DLS.SaveSystem
 			return projectDescriptions.ToArray();
 		}
 
-		static ChipLibrary LoadChipLibrary(ProjectDescription projectDescription)
+		public static ChipDescription[] LoadChipDescriptions(string projectName)
+		{
+			return LoadChipDescriptions(LoadProjectDescription(projectName));
+		}
+
+		public static ChipDescription[] LoadChipDescriptions(ProjectDescription projectDescription)
+		{
+			return LoadChipDescriptions(projectDescription, skipMissingChips: false, out _);
+		}
+
+		public static ChipDescription[] LoadAvailableChipDescriptions(ProjectDescription projectDescription, out string[] missingChipNames)
+		{
+			return LoadChipDescriptions(projectDescription, skipMissingChips: true, out missingChipNames);
+		}
+
+		static ChipDescription[] LoadChipDescriptions(ProjectDescription projectDescription, bool skipMissingChips, out string[] missingChipNames)
 		{
 			string chipDirectoryPath = SavePaths.GetChipsPath(projectDescription.ProjectName);
-			ChipDescription[] loadedChips = new ChipDescription[projectDescription.AllCustomChipNames.Length];
+			string[] customChipNames = projectDescription.AllCustomChipNames ?? Array.Empty<string>();
+			List<string> missingChips = new();
 
-			if (!Directory.Exists(chipDirectoryPath) && loadedChips.Length > 0) throw new DirectoryNotFoundException(chipDirectoryPath);
+			if (customChipNames.Length == 0)
+			{
+				missingChipNames = Array.Empty<string>();
+				return Array.Empty<ChipDescription>();
+			}
 
+			if (!Directory.Exists(chipDirectoryPath))
+			{
+				if (skipMissingChips)
+				{
+					missingChipNames = customChipNames;
+					return Array.Empty<ChipDescription>();
+				}
+
+				throw new DirectoryNotFoundException(chipDirectoryPath);
+			}
+
+			List<ChipDescription> loadedChips = new(customChipNames.Length);
+			foreach (string chipName in customChipNames)
+			{
+				string chipPath = Path.Combine(chipDirectoryPath, chipName + ".json");
+				if (!File.Exists(chipPath))
+				{
+					if (skipMissingChips)
+					{
+						missingChips.Add(chipName);
+						continue;
+					}
+
+					throw new FileNotFoundException("Chip save file not found", chipPath);
+				}
+
+				string chipSaveString = File.ReadAllText(chipPath);
+				loadedChips.Add(Serializer.DeserializeChipDescription(chipSaveString));
+			}
+
+			missingChipNames = missingChips.ToArray();
+			return loadedChips.ToArray();
+		}
+
+		public static bool ProjectHasCompleteLocalChipData(ProjectDescription projectDescription)
+		{
+			string[] customChipNames = projectDescription.AllCustomChipNames ?? Array.Empty<string>();
+			if (customChipNames.Length == 0)
+			{
+				return true;
+			}
+
+			string chipDirectoryPath = SavePaths.GetChipsPath(projectDescription.ProjectName);
+			if (!Directory.Exists(chipDirectoryPath))
+			{
+				return false;
+			}
+
+			foreach (string chipName in customChipNames)
+			{
+				string chipPath = Path.Combine(chipDirectoryPath, chipName + ".json");
+				if (!File.Exists(chipPath))
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		static ChipLibrary LoadChipLibrary(ProjectDescription projectDescription)
+		{
+			ChipDescription[] loadedChips = LoadChipDescriptions(projectDescription);
 			ChipDescription[] builtinChips = BuiltinChipCreator.CreateAllBuiltinChipDescriptions();
 			HashSet<string> customChipNameHashset = new(ChipDescription.NameComparer);
 
 			for (int i = 0; i < loadedChips.Length; i++)
 			{
-				string chipPath = Path.Combine(chipDirectoryPath, projectDescription.AllCustomChipNames[i] + ".json");
-				string chipSaveString = File.ReadAllText(chipPath);
-
-				ChipDescription chipDesc = Serializer.DeserializeChipDescription(chipSaveString);
-				loadedChips[i] = chipDesc;
-				customChipNameHashset.Add(chipDesc.Name);
+				customChipNameHashset.Add(loadedChips[i].Name);
 			}
 
 
