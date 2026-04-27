@@ -13,18 +13,24 @@ namespace DLS.SaveSystem
 			WriteToFile(data, SavePaths.AppSettingsPath);
 		}
 
-		public static void SaveProjectDescription(ProjectDescription projectDescription)
+		public static void SaveProjectDescription(ProjectDescription projectDescription, bool syncToCloud = true, bool updateSaveMetadata = true)
 		{
-			projectDescription.LastSaveTime = DateTime.Now;
-			projectDescription.DLSVersion_LastSaved = Main.DLSVersion.ToString();
-			projectDescription.DLSVersion_EarliestCompatible = Main.DLSVersion_EarliestCompatible.ToString();
+			if (updateSaveMetadata)
+			{
+				projectDescription.LastSaveTime = DateTime.Now;
+				projectDescription.DLSVersion_LastSaved = Main.DLSVersion.ToString();
+				projectDescription.DLSVersion_EarliestCompatible = Main.DLSVersion_EarliestCompatible.ToString();
+			}
 
 			// Salvamento local
 			string data = Serializer.SerializeProjectDescription(projectDescription);
 			WriteToFile(data, SavePaths.GetProjectDescriptionPath(projectDescription.ProjectName));
 
 			// Sincronização cloud
-			SaverCloudExtension.SyncProjectToCloud(projectDescription);
+			if (syncToCloud)
+			{
+				SaverCloudExtension.SyncProjectToCloud(projectDescription);
+			}
 		}
 
 		public static void RenameProject(string nameOld, string nameNew)
@@ -43,14 +49,17 @@ namespace DLS.SaveSystem
 			SaveProjectDescription(descNew);
 		}
 		
-		public static void SaveChip(ChipDescription chipDescription, string projectName)
+		public static void SaveChip(ChipDescription chipDescription, string projectName, bool syncToCloud = true)
 		{
 			// Salvamento local
 			string serializedDescription = CreateSerializedChipDescription(chipDescription);
 			WriteToFile(serializedDescription, GetChipFilePath(chipDescription.Name, projectName));
 
 			// Sincronização cloud
-			SaverCloudExtension.SyncChipToCloud(chipDescription, projectName);
+			if (syncToCloud)
+			{
+				SaverCloudExtension.SyncChipToCloud(chipDescription, projectName);
+			}
 		}
 
 		public static ChipDescription CloneChipDescription(ChipDescription desc)
@@ -96,6 +105,11 @@ namespace DLS.SaveSystem
 			}
 
 			// Sincronização cloud - deleta do Firebase
+			else if (Directory.Exists(projectPath))
+			{
+				Directory.Delete(projectPath, true);
+			}
+
 			SaverCloudExtension.DeleteProjectFromCloud(projectName);
 		}
 

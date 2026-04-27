@@ -23,7 +23,7 @@ namespace DLS.Game
 
 		public static void Init(AudioState audioState)
 		{
-			SavePaths.EnsureDirectoryExists(SavePaths.ProjectsPath);
+			SavePaths.UseOfflineProfile();
 			SaveAndApplyAppSettings(Loader.LoadAppSettings());
 			Main.audioState = audioState;
 		}
@@ -99,7 +99,7 @@ namespace DLS.Game
 		{
 			try
 			{
-				string path = SavePaths.AllData;
+				string path = SavePaths.ActiveProfileDataPath;
 
 				if (!Directory.Exists(path)) throw new Exception("Path does not not exist: " + path);
 
