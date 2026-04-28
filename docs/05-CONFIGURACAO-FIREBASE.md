@@ -22,6 +22,12 @@ Objetivo:
   - package: `com.sebastianlague.digitallogicsim`
   - app id: `1:979038201351:android:463614ca97b7b4c6c3aca2`
 
+Observacao:
+
+- os arquivos reais de configuracao do Firebase nao ficam mais versionados neste repositorio
+- o repositorio agora guarda apenas exemplos sanitizados em `google-services.json.example` e `google-services-desktop.json.example`
+- para rodar login/cloud sync localmente, copie esses exemplos para os caminhos esperados e substitua pelos valores reais do seu projeto
+
 ## Observacao importante sobre Unity Desktop
 
 A documentacao oficial do Firebase para Unity ainda descreve o workflow desktop como `beta` e diz que ele e voltado para desenvolvimento e testes, nao idealmente para distribuicao publica.
@@ -43,7 +49,7 @@ Para o estado atual deste repositorio, o caminho mais simples e:
 2. Habilitar `Authentication` com `Email/Password`.
 3. Criar o `Cloud Firestore` em `Native mode`.
 4. Aplicar regras basicas por usuario.
-5. Baixar os arquivos de configuracao do Firebase e substituir os do projeto.
+5. Baixar os arquivos reais de configuracao do Firebase e colocar localmente nos caminhos esperados, sem commitar essas credenciais.
 
 ## Estado atual do codigo
 
@@ -130,13 +136,15 @@ Referencia oficial:
 
 Quando voce criar seu projeto Firebase:
 
-1. Baixe o novo `google-services.json`.
-2. Substitua o arquivo da raiz do repositorio.
-3. Garanta que o `google-services-desktop.json` correspondente fique em `Assets/StreamingAssets/`.
+1. Copie `google-services.json.example` para `google-services.json`.
+2. Copie `google-services-desktop.json.example` para `Assets/StreamingAssets/google-services-desktop.json`.
+3. Substitua os placeholders desses arquivos pelos valores reais baixados do seu projeto Firebase.
+4. Nao faca commit dos arquivos reais; o `.gitignore` do repositorio ja bloqueia esses caminhos.
 
 Observacao:
 
-- este projeto ja usa `Assets/StreamingAssets/google-services-desktop.json`
+- este projeto continua usando `Assets/StreamingAssets/google-services-desktop.json` em runtime
+- em clone novo, crie a pasta `Assets/StreamingAssets/` se ela ainda nao existir antes de copiar o arquivo
 - se o Unity nao regenerar esse arquivo automaticamente, vamos alinhar manualmente no setup final
 
 ## Estrategia recomendada de implantacao
@@ -163,8 +171,8 @@ Observacao:
 - Google ativado em Authentication
 - Firestore criado
 - regras aplicadas
-- novos arquivos de configuracao baixados
-- arquivos do repositorio substituidos
+- exemplos copiados para os caminhos locais finais
+- placeholders trocados pelos valores reais baixados
 - teste de login
 - teste de salvar projeto
 - teste de abrir em outro computador
