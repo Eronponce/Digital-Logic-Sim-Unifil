@@ -124,6 +124,12 @@ Checklist minimo:
 4. Se quiser ampliar acesso, publicar build em `itch.io`.
 5. Definir numeracao de versao e changelog simplificado.
 
+Status em 2026-04-30:
+
+- fluxo local de build e empacotamento Windows/Linux funcionando por script
+- publicacao de release no GitHub validada com `v2.1.7`
+- playbook operacional documentado em `docs/09-BUILD-PUSH-E-RELEASE-2026-04-30.md`
+
 ## Melhorias que eu priorizaria
 
 ### Alta prioridade

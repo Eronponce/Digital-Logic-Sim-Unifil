@@ -11,7 +11,8 @@ Repository instructions for Codex and other agents. Follow this file first.
 3. `docs/02-ESTADO-ATUAL-DOS-DADOS.md`
 4. `docs/03-OPCOES-DE-BACKEND-E-CUSTO.md`
 5. `docs/04-ROADMAP-IMPLEMENTACAO.md`
-6. `.agents/skills/repo-planning/SKILL.md`
+6. `docs/09-BUILD-PUSH-E-RELEASE-2026-04-30.md`
+7. `.agents/skills/repo-planning/SKILL.md`
 
 If anything conflicts with older Markdown files in the repo root, prefer `AGENTS.md` and the files under `docs/`.
 
@@ -43,4 +44,4 @@ If anything conflicts with older Markdown files in the repo root, prefer `AGENTS
 
 - Use Play Mode in `Assets/Build/DLS.unity` for manual validation.
 - In the editor, `UnityMain` currently opens a test project unless `openInMainMenu` is enabled on the `Main` object.
-- There is no automated build pipeline yet. Document any manual build or release steps you rely on.
+- There is no CI/CD pipeline yet. Local scripted build/release flow is documented in `docs/09-BUILD-PUSH-E-RELEASE-2026-04-30.md`.

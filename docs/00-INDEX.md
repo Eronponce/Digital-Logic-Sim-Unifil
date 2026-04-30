@@ -12,7 +12,8 @@ Este diretorio concentra a visao atual do projeto. Ele existe porque varios arqu
 6. `docs/05-CONFIGURACAO-FIREBASE.md`
 7. `docs/06-FASE-1-ROUNDTRIP-E-PERFIS.md`
 8. `docs/07-AUTH-CADASTRO-E-RESET-2026-04-23.md`
-9. `.agents/skills/repo-planning/SKILL.md`
+9. `docs/09-BUILD-PUSH-E-RELEASE-2026-04-30.md`
+10. `.agents/skills/repo-planning/SKILL.md`
 
 ## Resumo rapido
 

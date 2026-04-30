@@ -50,13 +50,16 @@ Arquivos locais principais:
 
 ## Como gerar e compartilhar builds
 
-Hoje nao existe pipeline automatizado de build no repositorio. O caminho atual e manual:
+Hoje nao existe CI/CD de build no GitHub, mas ja existe automacao local por script:
 
-1. Abrir `Build Settings`.
-2. Confirmar que `Assets/Build/DLS.unity` esta na lista de cenas.
-3. Escolher o alvo inicial, com foco em `Windows x86_64`.
-4. Gerar o build.
-5. Distribuir a pasta completa do build, nao apenas o `.exe`.
+1. Gerar Windows release com `scripts/package-students.ps1`.
+2. Gerar Linux release com `scripts/package-linux.ps1`.
+3. Coletar artefatos em `Builds/Release/`.
+4. Publicar os artefatos em `GitHub Releases`.
+
+Referencia de operacao completa:
+
+- `docs/09-BUILD-PUSH-E-RELEASE-2026-04-30.md`
 
 ## Formas praticas de disponibilizar para outras pessoas
 
@@ -71,7 +74,7 @@ Hoje nao existe pipeline automatizado de build no repositorio. O caminho atual e
 
 ## O que falta para a entrega ficar profissional
 
-- script de build automatizado
+- pipeline CI/CD de build e release no GitHub
 - checklist de release por plataforma
 - documentacao de configuracao Firebase por ambiente
 - regras versionadas de Firestore/Auth
