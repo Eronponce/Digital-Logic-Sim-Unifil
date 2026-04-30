@@ -38,6 +38,7 @@ namespace DLS.Graphics
 		{
 			MainMenuAction.NewProject,
 			MainMenuAction.OpenProject,
+			MainMenuAction.EditProfile,
 			MainMenuAction.Settings,
 			MainMenuAction.About,
 			MainMenuAction.Logout,
@@ -135,6 +136,9 @@ namespace DLS.Graphics
 					break;
 				case MenuScreen.About:
 					DrawAboutScreen();
+					break;
+				case MenuScreen.EditProfile:
+					DrawEditProfileScreen();
 					break;
 			}
 
@@ -245,6 +249,10 @@ namespace DLS.Graphics
 					selectedProjectIndex = -1;
 					activeMenuScreen = MenuScreen.LoadProject;
 					break;
+				case MainMenuAction.EditProfile:
+					ProfileMenu.Initialize();
+					activeMenuScreen = MenuScreen.EditProfile;
+					break;
 				case MainMenuAction.Settings:
 					EditedAppSettings = Main.ActiveAppSettings;
 					activeMenuScreen = MenuScreen.Settings;
@@ -271,6 +279,7 @@ namespace DLS.Graphics
 		{
 			MainMenuAction.NewProject => FormatButtonString("New Project"),
 			MainMenuAction.OpenProject => FormatButtonString("Open Project"),
+			MainMenuAction.EditProfile => FormatButtonString("Edit Profile"),
 			MainMenuAction.Settings => FormatButtonString("Settings"),
 			MainMenuAction.About => FormatButtonString("About"),
 			MainMenuAction.Logout => FormatButtonString("Logout"),
@@ -318,6 +327,19 @@ namespace DLS.Graphics
 			else if (buttonIndex == duplicateButtonIndex) activePopup = PopupKind.NamePopup_DuplicateProject;
 			else if (buttonIndex == renameButtonIndex) activePopup = PopupKind.NamePopup_RenameProject;
 			else if (buttonIndex == openButtonIndex) Main.CreateOrLoadProject(SelectedProjectName, string.Empty);
+		}
+
+		static void DrawEditProfileScreen()
+		{
+			if (activePopup != PopupKind.None)
+			{
+				return;
+			}
+
+			if (ProfileMenu.DrawProfileScreen())
+			{
+				activeMenuScreen = MenuScreen.Main;
+			}
 		}
 
 		static bool ProjectNameValidator(string inputString) => inputString.Length <= 20 && !SaveUtils.NameContainsForbiddenChar(inputString);
@@ -600,7 +622,8 @@ namespace DLS.Graphics
 			Main,
 			LoadProject,
 			Settings,
-			About
+			About,
+			EditProfile
 		}
 
 		enum PopupKind
@@ -616,6 +639,7 @@ namespace DLS.Graphics
 		{
 			NewProject,
 			OpenProject,
+			EditProfile,
 			Settings,
 			About,
 			Logout,

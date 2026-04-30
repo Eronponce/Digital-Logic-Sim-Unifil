@@ -281,6 +281,11 @@ namespace DLS.CloudSync
 			Instance?.SendPasswordResetAsync(email);
 		}
 
+		public static void UpdatePassword(string newPassword)
+		{
+			Instance?.UpdatePasswordAsync(newPassword);
+		}
+
 		public static void UpdateStudentProfile(CloudStudentProfileData studentProfileData)
 		{
 			Instance?.UpdateStudentProfileAsync(studentProfileData);
@@ -351,6 +356,39 @@ namespace DLS.CloudSync
 			{
 				LogError($"Password reset failed: {ex.Message}\nStack: {ex.StackTrace}");
 				OnAuthError?.Invoke("Failed to send password reset email. Please try again.");
+			}
+		}
+
+		async void UpdatePasswordAsync(string newPassword)
+		{
+			try
+			{
+				if (Auth == null || CurrentUser == null)
+				{
+					OnAuthError?.Invoke("No authenticated user available to update the password.");
+					return;
+				}
+
+				if (string.IsNullOrWhiteSpace(newPassword))
+				{
+					OnAuthError?.Invoke("New password cannot be empty.");
+					return;
+				}
+
+				await CurrentUser.UpdatePasswordAsync(newPassword);
+				Log("Password updated successfully.");
+				OnAuthInfo?.Invoke("Password updated successfully.");
+			}
+			catch (Firebase.FirebaseException fbEx)
+			{
+				string friendlyError = GetFriendlyErrorMessage(fbEx);
+				LogError($"Password update failed: {friendlyError} (Code: {fbEx.ErrorCode})");
+				OnAuthError?.Invoke(friendlyError);
+			}
+			catch (Exception ex)
+			{
+				LogError($"Password update failed: {ex.Message}\nStack: {ex.StackTrace}");
+				OnAuthError?.Invoke("Failed to update password. Please try again.");
 			}
 		}
 
