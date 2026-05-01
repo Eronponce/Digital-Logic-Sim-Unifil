@@ -72,7 +72,16 @@ namespace DLS.CloudSync
 			Auth.StateChanged -= OnAuthStateChanged;
 			Auth.StateChanged += OnAuthStateChanged;
 
+			// Safety rule for shared classroom computers:
+			// always clear any persisted Firebase session on app startup.
+			if (CurrentUser != null)
+			{
+				Log("Forcing sign-out on startup to avoid reusing the previous student's session.");
+				Auth.SignOut();
+			}
+
 			Log($"Auth initialized. Persist session: {persistSession}");
+			lastProcessedUserId = "__startup_refresh__";
 			HandleCurrentAuthState();
 		}
 
