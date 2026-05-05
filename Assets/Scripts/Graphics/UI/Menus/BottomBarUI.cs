@@ -15,6 +15,8 @@ namespace DLS.Graphics
 		const float padY = 0.3f;
 		const float buttonSpacing = 0.25f;
 		const float buttonHeight = barHeight - padY * 2;
+		const float syncButtonWidth = 3.4f;
+		const float syncStatusDuration = 4f;
 
 		const string shortcutTextCol = "<color=#666666ff>";
 
@@ -47,6 +49,19 @@ namespace DLS.Graphics
 		static ChipCollection activeCollection;
 		static Vector2 collectionPopupBottomLeft;
 		static Bounds2D barBounds_ScreenSpace;
+		static bool manualSyncInProgress;
+		static string manualSyncStatusMessage = string.Empty;
+		static float manualSyncStatusHideTime;
+		static ManualSyncStatus manualSyncStatus = ManualSyncStatus.Idle;
+
+		enum ManualSyncStatus
+		{
+			Idle,
+			Working,
+			Success,
+			Warning,
+			Error
+		}
 
 		static bool MenuButtonsAndShortcutsEnabled => Project.ActiveProject.CanEditViewedChip;
 
@@ -146,11 +161,13 @@ namespace DLS.Graphics
 				toggleMenuFrame = Time.frameCount;
 			}
 
+			float chipButtonsRegionStartX = UI.PrevBounds.Right + buttonSpacing;
+			float chipButtonsRegionEndX = Mathf.Max(chipButtonsRegionStartX, DrawManualSyncButton(project, theme, inOtherMenu, ignoreInputs) - buttonSpacing);
 
 			// Chips
 			ButtonTheme buttonTheme = theme.ChipButton;
 
-			using (UI.CreateMaskScopeMinMax(new Vector2(UI.PrevBounds.Right + buttonSpacing, 0), new Vector2(UI.Width, barHeight)))
+			using (UI.CreateMaskScopeMinMax(new Vector2(chipButtonsRegionStartX, 0), new Vector2(chipButtonsRegionEndX, barHeight)))
 			{
 				bool chipButtonsEnabled = !inOtherMenu && project.CanEditViewedChip;
 
@@ -178,8 +195,7 @@ namespace DLS.Graphics
 				}
 
 				// -- Draw --
-				float chipButtonsRegionStartX = UI.PrevBounds.Right + buttonSpacing;
-				float chipButtonRegionWidth = UI.Width - chipButtonsRegionStartX;
+				float chipButtonRegionWidth = chipButtonsRegionEndX - chipButtonsRegionStartX;
 
 				scrollX = Mathf.Clamp(scrollX, Mathf.Min(0, chipButtonRegionWidth - chipBarTotalWidthLastFrame), 0);
 				float buttonPosX = chipButtonsRegionStartX + scrollX;
@@ -245,6 +261,92 @@ namespace DLS.Graphics
 
 
 			DrawCollectionsPopup();
+		}
+
+		static float DrawManualSyncButton(Project project, DrawSettings.UIThemeDLS theme, bool inOtherMenu, bool ignoreInputs)
+		{
+			Vector2 syncButtonPos = new(UI.Width - buttonSpacing, padY);
+			Vector2 syncButtonSize = new(syncButtonWidth, buttonHeight);
+			bool syncButtonEnabled = !inOtherMenu && !manualSyncInProgress;
+
+			if (UI.Button("SYNC", theme.MenuButtonTheme, syncButtonPos, syncButtonSize, syncButtonEnabled, false, false, Anchor.BottomRight, ignoreInputs: ignoreInputs))
+			{
+				StartManualSync(project);
+			}
+
+			Bounds2D syncButtonBounds = UI.PrevBounds;
+			DrawManualSyncStatus(syncButtonBounds);
+			return syncButtonBounds.Left;
+		}
+
+		static void StartManualSync(Project project)
+		{
+			if (manualSyncInProgress) return;
+
+			manualSyncInProgress = true;
+			SetManualSyncStatus("Saving...", ManualSyncStatus.Working, false);
+			Debug.Log("[ManualSync] Manual save/sync button pressed");
+
+			project.ForceSaveAndSyncCurrentProject(
+				result =>
+				{
+					manualSyncInProgress = false;
+
+					if (!result.Success)
+					{
+						SetManualSyncStatus(result.Message, ManualSyncStatus.Error, true);
+					}
+					else if (result.RequiresChipSave)
+					{
+						SetManualSyncStatus(result.Message, ManualSyncStatus.Warning, true);
+					}
+					else if (result.Success && result.CloudSynced)
+					{
+						SetManualSyncStatus("Saved and synced", ManualSyncStatus.Success, true);
+					}
+					else if (result.Success)
+					{
+						SetManualSyncStatus(result.Message, ManualSyncStatus.Warning, true);
+					}
+				},
+				status => SetManualSyncStatus(status, ManualSyncStatus.Working, false)
+			);
+		}
+
+		static void SetManualSyncStatus(string message, ManualSyncStatus status, bool finalMessage)
+		{
+			manualSyncStatusMessage = message;
+			manualSyncStatus = status;
+			if (finalMessage)
+			{
+				manualSyncStatusHideTime = Time.time + syncStatusDuration;
+			}
+		}
+
+		static void DrawManualSyncStatus(Bounds2D syncButtonBounds)
+		{
+			if (string.IsNullOrEmpty(manualSyncStatusMessage)) return;
+			if (!manualSyncInProgress && Time.time > manualSyncStatusHideTime) return;
+
+			DrawSettings.UIThemeDLS theme = DrawSettings.ActiveUITheme;
+			float fontSize = theme.FontSizeRegular * 0.75f;
+			Vector2 textSize = Draw.CalculateTextBoundsSize(manualSyncStatusMessage.AsSpan(), fontSize, theme.FontRegular);
+			Vector2 panelSize = textSize + new Vector2(1.1f, 0.55f);
+			Vector2 panelBottomRight = syncButtonBounds.TopRight + Vector2.up * buttonSpacing;
+
+			UI.DrawPanel(panelBottomRight, panelSize, new Color(0f, 0f, 0f, 0.82f), Anchor.BottomRight);
+			UI.DrawText(manualSyncStatusMessage, theme.FontRegular, fontSize, UI.PrevBounds.Centre, Anchor.TextCentre, ManualSyncStatusColour());
+		}
+
+		static Color ManualSyncStatusColour()
+		{
+			return manualSyncStatus switch
+			{
+				ManualSyncStatus.Success => new Color(0.45f, 1f, 0.58f),
+				ManualSyncStatus.Warning => new Color(1f, 0.82f, 0.35f),
+				ManualSyncStatus.Error => new Color(1f, 0.35f, 0.35f),
+				_ => Color.white
+			};
 		}
 
 
@@ -423,6 +525,10 @@ namespace DLS.Graphics
 			chipBarTotalWidthLastFrame = 0;
 			isDraggingChipBar = false;
 			activeCollection = null;
+			manualSyncInProgress = false;
+			manualSyncStatusMessage = string.Empty;
+			manualSyncStatusHideTime = 0;
+			manualSyncStatus = ManualSyncStatus.Idle;
 		}
 	}
 }

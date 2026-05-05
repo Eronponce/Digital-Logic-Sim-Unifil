@@ -73,7 +73,7 @@ namespace DLS.SaveSystem
 
 
 		// Delete chip save file, with option to keep backup in a DeletedChips folder.
-		public static void DeleteChip(string chipName, string projectName, bool backupInDeletedFolder = true)
+		public static void DeleteChip(string chipName, string projectName, bool backupInDeletedFolder = true, bool syncToCloud = true)
 		{
 			string filePath = GetChipFilePath(chipName, projectName);
 			if (backupInDeletedFolder)
@@ -89,7 +89,10 @@ namespace DLS.SaveSystem
 			}
 
 			// Sincronização cloud - deleta do Firebase
-			SaverCloudExtension.DeleteChipFromCloud(chipName, projectName);
+			if (syncToCloud)
+			{
+				SaverCloudExtension.DeleteChipFromCloud(chipName, projectName);
+			}
 		}
 
 		public static void DeleteProject(string projectName, bool backupInDeletedFolder = true)

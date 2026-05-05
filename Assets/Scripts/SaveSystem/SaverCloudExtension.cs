@@ -39,6 +39,46 @@ namespace DLS.SaveSystem
 			);
 		}
 
+		public static void SyncProjectBundleToCloud(ProjectDescription project, Action onSuccess = null, Action<string> onError = null)
+		{
+			if (!FirebaseAuthManager.IsLoggedIn)
+			{
+				Debug.LogWarning("[Cloud] Cannot sync project bundle: user not logged in");
+				onError?.Invoke("User not logged in");
+				return;
+			}
+
+			try
+			{
+				ChipDescription[] localChips = Loader.LoadAvailableChipDescriptions(project, out string[] missingChipNames);
+				if (missingChipNames.Length > 0)
+				{
+					Debug.LogWarning($"[Cloud] Project '{project.ProjectName}' references {missingChipNames.Length} missing chips. Syncing available chips only: {string.Join(", ", missingChipNames)}");
+				}
+
+				ProjectDescription projectToSync = SyncProjectChipIndex(project, localChips);
+				Debug.Log($"[Cloud] Starting project bundle sync: {projectToSync.ProjectName} ({localChips.Length} chips)");
+
+				FirestoreDataManager.SaveProjectBundle(projectToSync, localChips,
+					onSuccess: () =>
+					{
+						Debug.Log($"[Cloud] Project bundle '{projectToSync.ProjectName}' synced");
+						onSuccess?.Invoke();
+					},
+					onError: error =>
+					{
+						Debug.LogWarning($"[Cloud] Failed to sync project bundle '{projectToSync.ProjectName}': {error}");
+						onError?.Invoke(error);
+					}
+				);
+			}
+			catch (Exception ex)
+			{
+				Debug.LogError($"[Cloud] Failed to prepare project bundle sync: {ex.Message}");
+				onError?.Invoke(ex.Message);
+			}
+		}
+
 		public static void DeleteProjectFromCloud(string projectName)
 		{
 			if (!FirebaseAuthManager.IsLoggedIn)

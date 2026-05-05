@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using DLS.CloudSync;
 using DLS.Description;
 using DLS.Graphics;
 using DLS.SaveSystem;
@@ -20,6 +21,22 @@ namespace DLS.Game
 			Normal,
 			Rename,
 			SaveAs
+		}
+
+		public struct ManualSaveSyncResult
+		{
+			public readonly bool Success;
+			public readonly bool CloudSynced;
+			public readonly bool RequiresChipSave;
+			public readonly string Message;
+
+			public ManualSaveSyncResult(bool success, bool cloudSynced, string message, bool requiresChipSave = false)
+			{
+				Success = success;
+				CloudSynced = cloudSynced;
+				RequiresChipSave = requiresChipSave;
+				Message = message;
+			}
 		}
 
 		public static Project ActiveProject;
@@ -175,28 +192,28 @@ namespace DLS.Game
 		}
 
 
-		public void SaveFromDescription(ChipDescription saveChipDescription, SaveMode saveMode = SaveMode.Normal)
+		public void SaveFromDescription(ChipDescription saveChipDescription, SaveMode saveMode = SaveMode.Normal, bool syncToCloud = true)
 		{
 			// If this chip hasn't been saved before, it can't have been used anyway so no need to update anything
 			// (same thing if saving a new version of it)
 			if (ViewedChip.LastSavedDescription != null && saveMode != SaveMode.SaveAs)
 			{
-				UpdateAndSaveAffectedChips(ViewedChip.LastSavedDescription, saveChipDescription, false);
+				UpdateAndSaveAffectedChips(ViewedChip.LastSavedDescription, saveChipDescription, false, syncToCloud);
 			}
 
 			if (saveMode is SaveMode.Rename)
 			{
 				string nameOld = ViewedChip.LastSavedDescription.Name;
-				Saver.DeleteChip(nameOld, description.ProjectName, false);
-				Saver.SaveChip(saveChipDescription, description.ProjectName);
+				Saver.DeleteChip(nameOld, description.ProjectName, false, syncToCloud);
+				Saver.SaveChip(saveChipDescription, description.ProjectName, syncToCloud);
 				chipLibrary.NotifyChipRenamed(saveChipDescription, nameOld);
 				RenameStarred(saveChipDescription.Name, nameOld, false, false);
 				EnsureChipRenamedInCollections(nameOld, saveChipDescription.Name);
-				UpdateAndSaveProjectDescription();
+				UpdateAndSaveProjectDescription(syncToCloud);
 			}
 			else
 			{
-				Saver.SaveChip(saveChipDescription, description.ProjectName);
+				Saver.SaveChip(saveChipDescription, description.ProjectName, syncToCloud);
 
 				chipLibrary.NotifyChipSaved(saveChipDescription);
 				bool isNewChip = !ChipHasBeenSavedBefore || saveMode is SaveMode.SaveAs;
@@ -205,7 +222,7 @@ namespace DLS.Game
 				if (isNewChip)
 				{
 					SetStarred(saveChipDescription.Name, true, false, false);
-					UpdateAndSaveProjectDescription();
+					UpdateAndSaveProjectDescription(syncToCloud);
 				}
 			}
 
@@ -224,6 +241,63 @@ namespace DLS.Game
 			}
 
 			return Saver.HasUnsavedChanges(ViewedChip.LastSavedDescription, DescriptionCreator.CreateChipDescription(ViewedChip));
+		}
+
+		public void ForceSaveAndSyncCurrentProject(Action<ManualSaveSyncResult> onComplete = null, Action<string> onStatus = null)
+		{
+			Debug.Log($"[ManualSync] Starting manual save for project '{description.ProjectName}'");
+			onStatus?.Invoke("Saving...");
+
+			try
+			{
+				bool activeChipSaved = false;
+				bool activeChipRequiresSave = false;
+				if (CanEditViewedChip && ViewedChip.LastSavedDescription != null)
+				{
+					ChipDescription activeChipDescription = DescriptionCreator.CreateChipDescription(ViewedChip);
+					SaveFromDescription(activeChipDescription, SaveMode.Normal, syncToCloud: false);
+					activeChipSaved = true;
+				}
+				else if (CanEditViewedChip && ViewedChip.LastSavedDescription == null && ActiveChipHasUnsavedChanges())
+				{
+					activeChipRequiresSave = true;
+					Debug.LogWarning("[ManualSync] Current chip has unsaved edits but no saved chip name yet. Use Save Chip before it can be included in project sync.");
+				}
+
+				description.AllCustomChipNames = chipLibrary.GetAllCustomChipNames();
+				Saver.SaveProjectDescription(description, syncToCloud: false);
+				Debug.Log($"[ManualSync] Local project save complete for '{description.ProjectName}'. Active chip saved: {activeChipSaved}");
+
+				if (!FirebaseAuthManager.IsLoggedIn)
+				{
+					Debug.LogWarning("[ManualSync] User is offline/not logged in. Cloud sync skipped after local save.");
+					string offlineMessage = activeChipRequiresSave ? "Save Chip first" : "Saved locally only";
+					onComplete?.Invoke(new ManualSaveSyncResult(true, false, offlineMessage, activeChipRequiresSave));
+					return;
+				}
+
+				Debug.Log($"[ManualSync] Syncing project '{description.ProjectName}' to cloud");
+				onStatus?.Invoke("Syncing to cloud...");
+				SaverCloudExtension.SyncProjectBundleToCloud(description,
+					onSuccess: () =>
+					{
+						Debug.Log($"[ManualSync] Project '{description.ProjectName}' saved and synced");
+						string successMessage = activeChipRequiresSave ? "Synced; save chip first" : "Saved and synced";
+						onComplete?.Invoke(new ManualSaveSyncResult(true, true, successMessage, activeChipRequiresSave));
+					},
+					onError: error =>
+					{
+						Debug.LogError($"[ManualSync] Cloud sync failed for '{description.ProjectName}': {error}");
+						onComplete?.Invoke(new ManualSaveSyncResult(false, false, "Local saved; sync failed", activeChipRequiresSave));
+					}
+				);
+			}
+			catch (Exception ex)
+			{
+				Debug.LogError($"[ManualSync] Local save failed: {ex.Message}");
+				onComplete?.Invoke(new ManualSaveSyncResult(false, false, "Save failed"));
+				return;
+			}
 		}
 
 		public void CreateBlankDevChip()
@@ -406,7 +480,7 @@ namespace DLS.Game
 
 		// Must be called prior to library being updated with the change
 		// If deleting, new description can be left null
-		void UpdateAndSaveAffectedChips(ChipDescription root_desc, ChipDescription root_descNew, bool willDelete)
+		void UpdateAndSaveAffectedChips(ChipDescription root_desc, ChipDescription root_descNew, bool willDelete, bool syncToCloud = true)
 		{
 			// There a few ways in which chips other than the one currently being edited can be affected, and require resaving:
 			// -- A chip is deleted from the library -> all chips that contain the deleted chip must be resaved with that chip and its connections removed
@@ -466,7 +540,7 @@ namespace DLS.Game
 						}
 					}
 
-					Saver.SaveChip(updatedDesc, this.description.ProjectName);
+					Saver.SaveChip(updatedDesc, this.description.ProjectName, syncToCloud);
 					chipLibrary.NotifyChipSaved(updatedDesc);
 				}
 			}
@@ -585,22 +659,22 @@ namespace DLS.Game
 			ViewedChip.UpdateStateFromSim(ViewedSimChip, !CanEditViewedChip);
 		}
 
-		public void UpdateAndSaveProjectDescription()
+		public void UpdateAndSaveProjectDescription(bool syncToCloud = true)
 		{
 			ProjectDescription newDesc = description;
 			newDesc.AllCustomChipNames = chipLibrary.GetAllCustomChipNames();
-			UpdateAndSaveProjectDescription(newDesc);
+			UpdateAndSaveProjectDescription(newDesc, syncToCloud);
 		}
 
-		public void UpdateAndSaveProjectDescription(ProjectDescription editedProjectDesc)
+		public void UpdateAndSaveProjectDescription(ProjectDescription editedProjectDesc, bool syncToCloud = true)
 		{
 			description = editedProjectDesc;
-			SaveCurrentProjectDescription();
+			SaveCurrentProjectDescription(syncToCloud);
 		}
 
-		public void SaveCurrentProjectDescription()
+		public void SaveCurrentProjectDescription(bool syncToCloud = true)
 		{
-			Saver.SaveProjectDescription(description);
+			Saver.SaveProjectDescription(description, syncToCloud);
 		}
 
 		public void RenameCollection(int collectionIndex, string nameNew, bool autoSave = true)
