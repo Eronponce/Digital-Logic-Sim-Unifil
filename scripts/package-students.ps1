@@ -53,7 +53,7 @@ if (-not $isccExe) {
 }
 
 $env:DLS_BUILD_SOURCE_DIR = $buildDir
-$env:DLS_APP_VERSION = "2.1.9"
+$env:DLS_APP_VERSION = "2.1.10"
 
 Write-Host "Using Inno Setup: $isccExe"
 Write-Host "Installer script: $innoScript"

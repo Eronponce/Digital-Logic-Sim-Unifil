@@ -3,7 +3,7 @@
 #define AppExeName "Digital-Logic-Sim-Unifil.exe"
 #define AppVersion GetEnv("DLS_APP_VERSION")
 #if AppVersion == ""
-  #define AppVersion "2.1.6"
+  #define AppVersion "2.1.10"
 #endif
 #define SourceDir GetEnv("DLS_BUILD_SOURCE_DIR")
 #if SourceDir == ""

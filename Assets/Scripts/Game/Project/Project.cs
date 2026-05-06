@@ -40,6 +40,7 @@ namespace DLS.Game
 		}
 
 		public static Project ActiveProject;
+		const int MaxManualSyncStatusChips = 50;
 		public readonly ChipLibrary chipLibrary;
 
 		public ChipInteractionController controller;
@@ -246,7 +247,7 @@ namespace DLS.Game
 		public void ForceSaveAndSyncCurrentProject(Action<ManualSaveSyncResult> onComplete = null, Action<string> onStatus = null)
 		{
 			Debug.Log($"[ManualSync] Starting manual save for project '{description.ProjectName}'");
-			onStatus?.Invoke("Saving...");
+			onStatus?.Invoke("Salvando...");
 
 			try
 			{
@@ -265,39 +266,74 @@ namespace DLS.Game
 				}
 
 				description.AllCustomChipNames = chipLibrary.GetAllCustomChipNames();
+				ChipDescription[] currentSessionChips = chipLibrary.allChips
+					.Where(chip => !chipLibrary.IsBuiltinChip(chip.Name))
+					.ToArray();
 				Saver.SaveProjectDescription(description, syncToCloud: false);
 				Debug.Log($"[ManualSync] Local project save complete for '{description.ProjectName}'. Active chip saved: {activeChipSaved}");
 
 				if (!FirebaseAuthManager.IsLoggedIn)
 				{
 					Debug.LogWarning("[ManualSync] User is offline/not logged in. Cloud sync skipped after local save.");
-					string offlineMessage = activeChipRequiresSave ? "Save Chip first" : "Saved locally only";
+					string offlineMessage = activeChipRequiresSave ? "Salve o circuito primeiro" : "Salvo apenas localmente";
 					onComplete?.Invoke(new ManualSaveSyncResult(true, false, offlineMessage, activeChipRequiresSave));
 					return;
 				}
 
 				Debug.Log($"[ManualSync] Syncing project '{description.ProjectName}' to cloud");
-				onStatus?.Invoke("Syncing to cloud...");
-				SaverCloudExtension.SyncProjectBundleToCloud(description,
+				onStatus?.Invoke("Sincronizando na nuvem...");
+				SaverCloudExtension.SyncProjectBundleToCloud(description, currentSessionChips,
 					onSuccess: () =>
 					{
 						Debug.Log($"[ManualSync] Project '{description.ProjectName}' saved and synced");
-						string successMessage = activeChipRequiresSave ? "Synced; save chip first" : "Saved and synced";
+						string successMessage = activeChipRequiresSave
+							? $"Circuitos carregados sincronizados; salve o circuito atual primeiro\n{CreateSyncedChipsMessage(currentSessionChips)}"
+							: CreateSyncedChipsMessage(currentSessionChips);
 						onComplete?.Invoke(new ManualSaveSyncResult(true, true, successMessage, activeChipRequiresSave));
 					},
 					onError: error =>
 					{
 						Debug.LogError($"[ManualSync] Cloud sync failed for '{description.ProjectName}': {error}");
-						onComplete?.Invoke(new ManualSaveSyncResult(false, false, "Local saved; sync failed", activeChipRequiresSave));
+						string message = string.IsNullOrWhiteSpace(error) ? "Salvo localmente; sincronizacao falhou" : error;
+						onComplete?.Invoke(new ManualSaveSyncResult(false, false, message, activeChipRequiresSave));
 					}
 				);
 			}
 			catch (Exception ex)
 			{
 				Debug.LogError($"[ManualSync] Local save failed: {ex.Message}");
-				onComplete?.Invoke(new ManualSaveSyncResult(false, false, "Save failed"));
+				onComplete?.Invoke(new ManualSaveSyncResult(false, false, "Falha ao salvar"));
 				return;
 			}
+		}
+
+		static string CreateSyncedChipsMessage(IEnumerable<ChipDescription> chips)
+		{
+			string[] names = chips
+				.Where(chip => chip != null && !string.IsNullOrWhiteSpace(chip.Name))
+				.Select(chip => chip.Name)
+				.Distinct(ChipDescription.NameComparer)
+				.OrderBy(name => name, ChipDescription.NameComparer)
+				.ToArray();
+
+			if (names.Length == 0)
+			{
+				return "Salvo e sincronizado\nNenhum circuito personalizado encontrado";
+			}
+
+			string[] visibleNames = names.Take(MaxManualSyncStatusChips).ToArray();
+			List<string> rows = new();
+			for (int i = 0; i < visibleNames.Length; i += 8)
+			{
+				rows.Add(string.Join(", ", visibleNames.Skip(i).Take(8)));
+			}
+
+			if (names.Length > visibleNames.Length)
+			{
+				rows.Add($"+{names.Length - visibleNames.Length} outros");
+			}
+
+			return $"Salvo e sincronizado ({names.Length})\n{string.Join("\n", rows)}";
 		}
 
 		public void CreateBlankDevChip()

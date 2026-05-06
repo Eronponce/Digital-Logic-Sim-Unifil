@@ -16,7 +16,8 @@ namespace DLS.Graphics
 		const float buttonSpacing = 0.25f;
 		const float buttonHeight = barHeight - padY * 2;
 		const float syncButtonWidth = 3.4f;
-		const float syncStatusDuration = 4f;
+		const float syncStatusDuration = 14f;
+		const float syncCooldownDuration = 10f;
 
 		const string shortcutTextCol = "<color=#666666ff>";
 
@@ -52,6 +53,7 @@ namespace DLS.Graphics
 		static bool manualSyncInProgress;
 		static string manualSyncStatusMessage = string.Empty;
 		static float manualSyncStatusHideTime;
+		static float manualSyncCooldownUntil;
 		static ManualSyncStatus manualSyncStatus = ManualSyncStatus.Idle;
 
 		enum ManualSyncStatus
@@ -267,9 +269,12 @@ namespace DLS.Graphics
 		{
 			Vector2 syncButtonPos = new(UI.Width - buttonSpacing, padY);
 			Vector2 syncButtonSize = new(syncButtonWidth, buttonHeight);
-			bool syncButtonEnabled = !inOtherMenu && !manualSyncInProgress;
+			float cooldownRemaining = Mathf.Max(0, manualSyncCooldownUntil - Time.time);
+			bool isSyncCoolingDown = cooldownRemaining > 0;
+			bool syncButtonEnabled = !inOtherMenu && !manualSyncInProgress && !isSyncCoolingDown;
+			string syncButtonText = isSyncCoolingDown ? $"SYNC {Mathf.CeilToInt(cooldownRemaining)}s" : "SYNC";
 
-			if (UI.Button("SYNC", theme.MenuButtonTheme, syncButtonPos, syncButtonSize, syncButtonEnabled, false, false, Anchor.BottomRight, ignoreInputs: ignoreInputs))
+			if (UI.Button(syncButtonText, theme.MenuButtonTheme, syncButtonPos, syncButtonSize, syncButtonEnabled, false, false, Anchor.BottomRight, ignoreInputs: ignoreInputs))
 			{
 				StartManualSync(project);
 			}
@@ -284,13 +289,14 @@ namespace DLS.Graphics
 			if (manualSyncInProgress) return;
 
 			manualSyncInProgress = true;
-			SetManualSyncStatus("Saving...", ManualSyncStatus.Working, false);
+			SetManualSyncStatus("Salvando...", ManualSyncStatus.Working, false);
 			Debug.Log("[ManualSync] Manual save/sync button pressed");
 
 			project.ForceSaveAndSyncCurrentProject(
 				result =>
 				{
 					manualSyncInProgress = false;
+					manualSyncCooldownUntil = Time.time + syncCooldownDuration;
 
 					if (!result.Success)
 					{
@@ -302,7 +308,7 @@ namespace DLS.Graphics
 					}
 					else if (result.Success && result.CloudSynced)
 					{
-						SetManualSyncStatus("Saved and synced", ManualSyncStatus.Success, true);
+						SetManualSyncStatus(result.Message, ManualSyncStatus.Success, true);
 					}
 					else if (result.Success)
 					{
@@ -528,6 +534,7 @@ namespace DLS.Graphics
 			manualSyncInProgress = false;
 			manualSyncStatusMessage = string.Empty;
 			manualSyncStatusHideTime = 0;
+			manualSyncCooldownUntil = 0;
 			manualSyncStatus = ManualSyncStatus.Idle;
 		}
 	}
