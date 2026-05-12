@@ -98,13 +98,14 @@ namespace DLS.Simulation
 			}
 		}
 
-		public void Sim_PropagateOutputs()
+		public void Sim_PropagateOutputs(bool delayByOneTickPerInstance)
 		{
 			int length = OutputPins.Length;
 
 			for (int i = 0; i < length; i++)
 			{
-				OutputPins[i].PropagateSignal();
+				if (delayByOneTickPerInstance) OutputPins[i].PropagateSignalDelayedByOneTick();
+				else OutputPins[i].PropagateSignal();
 			}
 
 			numInputsReady = 0; // Reset for next frame
