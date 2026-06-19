@@ -419,6 +419,11 @@ namespace DLS.Game
 					}
 
 					WireInstance duplicatedWire = new(sourceConnectionInfo, targetConnectionInfo, wirePoints, ActiveDevChip.Wires.Count + DuplicatedWires.Count);
+					duplicatedWire.HasCustomColour = wire.HasCustomColour;
+					duplicatedWire.CustomColour = wire.CustomColour;
+					duplicatedWire.Pattern = wire.Pattern;
+					duplicatedWire.Label = wire.Label;
+					duplicatedWire.LabelT = wire.LabelT;
 					duplicatedWireFromOriginal.Add(wire, duplicatedWire);
 					DuplicatedWires.Add(duplicatedWire);
 				}
