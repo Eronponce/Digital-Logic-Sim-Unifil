@@ -603,7 +603,8 @@ namespace DLS.Graphics
 			// Toggle state on mouse down
 			bool mouseOverStateIndicator = devPin.PointIsInStateIndicatorBounds(InputHelper.MousePosWorld);
 			bool interactingWithStateDisplay = mouseOverStateIndicator && devPin.IsInputPin && controller.CanInteractWithPinStateDisplay;
-			Color stateCol = devPin.Pin.GetStateCol(0, interactingWithStateDisplay, canEditViewedChip);
+			WireInstance customWire1Bit = GetCustomColorWire(devPin.Pin);
+			Color stateCol = customWire1Bit != null ? customWire1Bit.GetColour(0) : devPin.Pin.GetStateCol(0, interactingWithStateDisplay, canEditViewedChip);
 
 			// Highlight on hover and toggle on mouse down
 			if (interactingWithStateDisplay)
@@ -657,7 +658,8 @@ namespace DLS.Graphics
 					// Highlight on hover, toggle on press
 					bool mouseOverStateToggle = InputHelper.MouseInsideBounds_World(pos, squareDisplaySize);
 					bool isInteractingWithStateDisplay = mouseOverStateToggle && isInteractable;
-					Color stateCol = devPin.Pin.GetStateCol(currBitIndex, isInteractingWithStateDisplay, canEditViewedChip);
+					WireInstance customWireMultiBit = GetCustomColorWire(devPin.Pin);
+					Color stateCol = customWireMultiBit != null ? customWireMultiBit.GetColour(currBitIndex) : devPin.Pin.GetStateCol(currBitIndex, isInteractingWithStateDisplay, canEditViewedChip);
 
 					if (isInteractingWithStateDisplay)
 					{
@@ -679,6 +681,18 @@ namespace DLS.Graphics
 			DrawPinHandle(devPin, devPin.HandlePosition, devPin.GetHandleSize());
 		}
 
+
+		static WireInstance GetCustomColorWire(PinInstance pin)
+		{
+			foreach (WireInstance w in Project.ActiveProject.ViewedChip.Wires)
+			{
+				if (!w.IsFullyConnected) continue;
+				if (!w.HasCustomColour && !w.SourcePin.HasInheritedWireColour) continue;
+				if (pin.IsSourcePin && PinAddress.Equals(w.SourcePin.Address, pin.Address)) return w;
+				if (!pin.IsSourcePin && PinAddress.Equals(w.TargetPin.Address, pin.Address)) return w;
+			}
+			return null;
+		}
 
 		static void DrawPinHandle(IInteractable item, Vector2 pos, Vector2 size)
 		{
@@ -858,7 +872,13 @@ namespace DLS.Graphics
 
 			// Draw
 			Color col = wire.GetColour(0);
-			float interactSqrDst = WireDrawer.DrawWireStraight(wire.BitWires[0].Points, thickness, col, mousePos);
+			WirePattern effectivePattern1Bit = wire.Pattern != WirePattern.None ? wire.Pattern : wire.SourcePin.InheritedWirePattern;
+			float interactSqrDst = effectivePattern1Bit switch
+			{
+				WirePattern.Dashed => WireDrawer.DrawWireDashed(wire.BitWires[0].Points, thickness, col, mousePos),
+				WirePattern.Double => WireDrawer.DrawWireDouble(wire.BitWires[0].Points, thickness, col, mousePos),
+				_ => WireDrawer.DrawWireStraight(wire.BitWires[0].Points, thickness, col, mousePos)
+			};
 
 			// Draw connection point (if connects to wire)
 			if (wire.ConnectedWire != null)
@@ -887,11 +907,18 @@ namespace DLS.Graphics
 			WireLayoutHelper.CreateMultiBitWireLayout(wire.BitWires, wire, WireThickness);
 
 			// Draw
+			WirePattern inheritedPatternMultiBit = wire.SourcePin.InheritedWirePattern;
 			for (int bitIndex = 0; bitIndex < wire.BitWires.Length; bitIndex++)
 			{
 				WireInstance.BitWire bitWire = wire.BitWires[bitIndex];
 				Color col = wire.GetColour(bitIndex);
-				float sqrInteractDst = WireDrawer.DrawWireStraight(bitWire.Points, thickness, col, mousePos);
+				WirePattern effectivePatternMultiBit = wire.Pattern != WirePattern.None ? wire.Pattern : inheritedPatternMultiBit;
+				float sqrInteractDst = effectivePatternMultiBit switch
+				{
+					WirePattern.Dashed => WireDrawer.DrawWireDashed(bitWire.Points, thickness, col, mousePos),
+					WirePattern.Double => WireDrawer.DrawWireDouble(bitWire.Points, thickness, col, mousePos),
+					_ => WireDrawer.DrawWireStraight(bitWire.Points, thickness, col, mousePos)
+				};
 				if (canInteract && sqrInteractDst < sqrDstThreshold) InteractionState.NotifyElementUnderMouse(wire);
 			}
 		}

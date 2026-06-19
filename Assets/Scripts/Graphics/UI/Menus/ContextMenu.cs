@@ -75,20 +75,23 @@ namespace DLS.Graphics
 		};
 
 
-		static readonly MenuEntry[] entries_subChipOutput = { pinColourEntry };
+		static readonly MenuEntry[] entries_subChipOutput =
+		{
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire)
+		};
 
 		static readonly MenuEntry[] entries_inputDevPin =
 		{
 			new(Format("EDIT"), OpenPinEditMenu, CanEditCurrentChip),
-			new(Format("COLOR"), OpenPinColourPopup, CanSetCol),
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire),
 			new(Format("DELETE"), Delete, CanDelete),
 		};
 
 		static readonly MenuEntry[] entries_outputDevPin =
 		{
-			entries_inputDevPin[0], // EDIT
-			entries_inputDevPin[1], // COLOR
-			entries_inputDevPin[2], // DELETE
+			new(Format("EDIT"), OpenPinEditMenu, CanEditCurrentChip),
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire),
+			new(Format("DELETE"), Delete, CanDelete),
 		};
 
 		static readonly MenuEntry[] entries_wire =
@@ -387,6 +390,11 @@ namespace DLS.Graphics
 		static void OpenWireLabelPopup()
 		{
 			UIDrawer.SetActiveMenu(UIDrawer.MenuType.WireLabelEdit);
+		}
+
+		static void OpenWireStyleMenu()
+		{
+			UIDrawer.SetActiveMenu(UIDrawer.MenuType.WireStyleEdit);
 		}
 
 		public static void EditWire()

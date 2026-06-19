@@ -23,6 +23,11 @@ namespace DLS.Game
 		public float LocalPosY;
 		public string Name;
 
+		// Inherited wire style from chip's internal wire connected to the output dev pin
+		public bool HasInheritedWireColour;
+		public Color InheritedWireColour;
+		public WirePattern InheritedWirePattern;
+
 
 		public PinInstance(PinDescription desc, PinAddress address, IMoveable parent, bool isSourcePin)
 		{
