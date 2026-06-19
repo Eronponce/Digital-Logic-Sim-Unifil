@@ -15,6 +15,7 @@ namespace DLS.Game
 		// ---- Selection and placement state ----
 		public readonly List<IMoveable> SelectedElements = new();
 		public List<WireInstance> DuplicatedWires = new();
+		readonly List<IMoveable> clipboardElements = new();
 		public WireInstance WireToPlace;
 		bool isPlacingNewElements;
 		float itemPlacementCurrVerticalSpacing;
@@ -198,6 +199,24 @@ namespace DLS.Game
 				UIDrawer.SetActiveMenu(UIDrawer.MenuType.Search);
 			}
 
+
+			if (KeyboardShortcuts.CopyShortcutTriggered)
+			{
+				if (SelectedElements.Count > 0 && !IsPlacingOrMovingElementOrCreatingWire)
+				{
+					clipboardElements.Clear();
+					clipboardElements.AddRange(SelectedElements);
+				}
+			}
+
+			if (KeyboardShortcuts.PasteShortcutTriggered)
+			{
+				if (clipboardElements.Count > 0 && !IsPlacingOrMovingElementOrCreatingWire)
+				{
+					CancelEverything();
+					DuplicateElements(clipboardElements);
+				}
+			}
 
 			if (KeyboardShortcuts.DuplicateShortcutTriggered)
 			{
@@ -956,7 +975,7 @@ namespace DLS.Game
 
 			else // SubChip
 			{
-				SubChipDescription subChipDesc = DescriptionCreator.CreateBuiltinSubChipDescriptionForPlacement(chipDescription.ChipType, chipDescription.Name, instanceID, Vector2.zero);
+				SubChipDescription subChipDesc = DescriptionCreator.CreateSubChipDescriptionForPlacement(chipDescription, instanceID, Vector2.zero);
 				elementToPlace = new SubChipInstance(chipDescription, subChipDesc);
 			}
 

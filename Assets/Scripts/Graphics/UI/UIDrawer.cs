@@ -21,7 +21,8 @@ namespace DLS.Graphics
 			UnsavedChanges,
 			Search,
 			ChipLabelPopup,
-			WireLabelEdit
+			WireLabelEdit,
+			PinColourPopup
 		}
 
 		static MenuType activeMenuOld;
@@ -70,6 +71,7 @@ namespace DLS.Graphics
 			else if (menuToDraw == MenuType.ChipLabelPopup) ChipLabelMenu.DrawMenu();
 			else if (menuToDraw == MenuType.PulseEdit) PulseEditMenu.DrawMenu();
 			else if (menuToDraw == MenuType.WireLabelEdit) WireLabelMenu.DrawMenu();
+			else if (menuToDraw == MenuType.PinColourPopup) PinColourMenu.DrawMenu();
 			else
 			{
 				bool showSimPausedBanner = project.simPaused;

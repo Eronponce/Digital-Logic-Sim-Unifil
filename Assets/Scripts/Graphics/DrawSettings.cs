@@ -63,26 +63,42 @@ namespace DLS.Graphics
 			const float whiteHigh = 0.9f;
 			Color[] stateLow =
 			{
-				new(0.2f, 0.1f, 0.1f),
-				new(0.28f, 0.15f, 0.01f),
-				new(0.26f, 0.2f, 0.07f),
-				new(0.1f, 0.2f, 0.1f),
-				new(0.1f, 0.14f, 0.35f),
-				new(0.19f, 0.12f, 0.28f),
-				new(0.25f, 0.1f, 0.25f),
-				new(whiteLow, whiteLow, whiteLow)
+				new(0.22f, 0.08f, 0.08f), // Red
+				new(0.28f, 0.14f, 0.03f), // Orange
+				new(0.26f, 0.22f, 0.06f), // Yellow
+				new(0.08f, 0.20f, 0.10f), // Green
+				new(0.08f, 0.12f, 0.36f), // Blue
+				new(0.18f, 0.10f, 0.28f), // Violet
+				new(0.25f, 0.08f, 0.25f), // Pink
+				new(whiteLow, whiteLow, whiteLow), // White
+				new(0.28f, 0.10f, 0.04f), // RedOrange
+				new(0.28f, 0.20f, 0.05f), // YellowOrange
+				new(0.14f, 0.24f, 0.05f), // Lime
+				new(0.05f, 0.22f, 0.18f), // Teal
+				new(0.05f, 0.22f, 0.22f), // Cyan
+				new(0.08f, 0.16f, 0.34f), // SkyBlue
+				new(0.12f, 0.08f, 0.30f), // Indigo
+				new(0.28f, 0.06f, 0.28f), // Magenta
 			};
 
 			Color[] stateHigh =
 			{
-				new(0.95f, 0.3f, 0.31f),
-				new(0.92f, 0.44f, 0.12f),
-				new(0.98f, 0.76f, 0.26f),
-				new(0.25f, 0.66f, 0.31f),
-				new(0.2f, 0.5f, 1f),
-				new(0.6f, 0.4f, 0.98f),
-				new(0.84f, 0.33f, 0.9f),
-				new(whiteHigh, whiteHigh, whiteHigh)
+				new(0.95f, 0.28f, 0.28f), // Red
+				new(0.95f, 0.52f, 0.10f), // Orange
+				new(0.98f, 0.88f, 0.20f), // Yellow
+				new(0.22f, 0.78f, 0.30f), // Green
+				new(0.18f, 0.48f, 1.00f), // Blue
+				new(0.60f, 0.38f, 0.98f), // Violet
+				new(0.88f, 0.30f, 0.88f), // Pink
+				new(whiteHigh, whiteHigh, whiteHigh), // White
+				new(0.98f, 0.40f, 0.15f), // RedOrange
+				new(0.98f, 0.75f, 0.15f), // YellowOrange
+				new(0.55f, 0.95f, 0.15f), // Lime
+				new(0.10f, 0.85f, 0.70f), // Teal
+				new(0.10f, 0.90f, 0.90f), // Cyan
+				new(0.20f, 0.65f, 1.00f), // SkyBlue
+				new(0.38f, 0.28f, 0.98f), // Indigo
+				new(0.96f, 0.20f, 0.96f), // Magenta
 			};
 
 			Color[] stateHover = stateLow.Select(c => Brighten(c, 0.075f)).ToArray();
