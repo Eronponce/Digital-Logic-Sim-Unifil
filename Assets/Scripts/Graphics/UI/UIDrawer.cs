@@ -22,7 +22,9 @@ namespace DLS.Graphics
 			Search,
 			ChipLabelPopup,
 			WireLabelEdit,
-			PinColourPopup
+			WireStyleEdit,
+			PinColourPopup,
+			AnnotationEdit
 		}
 
 		static MenuType activeMenuOld;
@@ -71,7 +73,9 @@ namespace DLS.Graphics
 			else if (menuToDraw == MenuType.ChipLabelPopup) ChipLabelMenu.DrawMenu();
 			else if (menuToDraw == MenuType.PulseEdit) PulseEditMenu.DrawMenu();
 			else if (menuToDraw == MenuType.WireLabelEdit) WireLabelMenu.DrawMenu();
+			else if (menuToDraw == MenuType.WireStyleEdit) WireStyleMenu.DrawMenu();
 			else if (menuToDraw == MenuType.PinColourPopup) PinColourMenu.DrawMenu();
+			else if (menuToDraw == MenuType.AnnotationEdit) AnnotationEditMenu.DrawMenu();
 			else
 			{
 				bool showSimPausedBanner = project.simPaused;
@@ -103,6 +107,8 @@ namespace DLS.Graphics
 				else if (ActiveMenu == MenuType.ChipLabelPopup) ChipLabelMenu.OnMenuOpened();
 				else if (ActiveMenu == MenuType.PulseEdit) PulseEditMenu.OnMenuOpened();
 				else if (ActiveMenu == MenuType.WireLabelEdit) WireLabelMenu.OnMenuOpened();
+				else if (ActiveMenu == MenuType.WireStyleEdit) WireStyleMenu.OnMenuOpened();
+				else if (ActiveMenu == MenuType.AnnotationEdit) AnnotationEditMenu.OnMenuOpened();
 
 				if (InInputBlockingMenu() && Project.ActiveProject != null && Project.ActiveProject.controller != null)
 				{

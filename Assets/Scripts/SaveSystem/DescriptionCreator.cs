@@ -43,6 +43,7 @@ namespace DLS.SaveSystem
 				OutputPins = outputPins,
 				Wires = chip.Wires.Select(CreateWireDescription).ToArray(),
 				Displays = displays,
+				Annotations = chip.Elements.OfType<AnnotationInstance>().Select(a => a.ToDescription()).ToArray(),
 				ChipType = ChipType.Custom
 			};
 		}
@@ -165,7 +166,10 @@ namespace DLS.SaveSystem
 				ConnectedWireSegmentIndex = connectedWireSegmentIndex,
 				Points = wirePoints,
 				Label = wire.Label,
-				LabelT = wire.LabelT
+				LabelT = wire.LabelT,
+				HasCustomColour = wire.HasCustomColour,
+				CustomColour = wire.CustomColour,
+				Pattern = wire.Pattern
 			};
 		}
 
