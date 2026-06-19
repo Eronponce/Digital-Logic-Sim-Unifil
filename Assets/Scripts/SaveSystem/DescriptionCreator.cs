@@ -146,7 +146,9 @@ namespace DLS.SaveSystem
 				ConnectionType = connectionType,
 				ConnectedWireIndex = connectedWireIndex,
 				ConnectedWireSegmentIndex = connectedWireSegmentIndex,
-				Points = wirePoints
+				Points = wirePoints,
+				Label = wire.Label,
+				LabelT = wire.LabelT
 			};
 		}
 

@@ -167,6 +167,8 @@ namespace DLS.Game
 				};
 
 				loadedWire = new WireInstance(sourceConnection, targetConnection, wireDescription.Points, wireIndex);
+				loadedWire.Label = wireDescription.Label ?? string.Empty;
+				loadedWire.LabelT = wireDescription.LabelT == 0 ? 0.5f : wireDescription.LabelT;
 			}
 			else
 			{

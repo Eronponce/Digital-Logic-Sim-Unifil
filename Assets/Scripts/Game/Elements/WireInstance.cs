@@ -25,6 +25,8 @@ namespace DLS.Game
 		public int ConnectedWireRecursionDepth;
 		public int descriptionCreator_wireIndex;
 		public int drawOrder;
+		public string Label = string.Empty;
+		public float LabelT = 0.5f;
 
 		// An offset to be applied to all wire points (this is used when a wire is being moved, but the move has not yet been confirmed)
 		public Vector2 MoveOffset;

@@ -704,6 +704,115 @@ namespace DLS.Graphics
 			{
 				DrawMultiBitWire(wire);
 			}
+
+			if (!string.IsNullOrEmpty(wire.Label) && wire.IsFullyConnected)
+			{
+				DrawWireLabel(wire);
+			}
+		}
+
+		static WireInstance draggingLabelWire;
+
+		static void DrawWireLabel(WireInstance wire)
+		{
+			Vector2 labelPos = GetWirePointAtT(wire, wire.LabelT);
+			Vector2 size = Draw.CalculateTextBoundsSize(wire.Label, FontSizePinLabel, FontBold) + LabelBackgroundPadding;
+
+			bool mouseOver = !InteractionState.MouseIsOverUI
+				&& Mathf.Abs(InputHelper.MousePosWorld.x - labelPos.x) <= size.x * 0.5f
+				&& Mathf.Abs(InputHelper.MousePosWorld.y - labelPos.y) <= size.y * 0.5f;
+
+			bool isDragging = draggingLabelWire == wire;
+
+			if (!UIDrawer.InInputBlockingMenu())
+			{
+				if (mouseOver && InputHelper.IsMouseDownThisFrame(MouseButton.Left) && !controller.IsPlacingOrMovingElementOrCreatingWire)
+				{
+					draggingLabelWire = wire;
+					isDragging = true;
+					InputHelper.ConsumeMouseButtonDownEvent(MouseButton.Left);
+				}
+
+				if (isDragging)
+				{
+					if (InputHelper.IsMouseHeld(MouseButton.Left))
+					{
+						wire.LabelT = ProjectMouseOntoWireT(wire, InputHelper.MousePosWorld);
+						labelPos = GetWirePointAtT(wire, wire.LabelT);
+						InteractionState.NotifyUnspecifiedElementUnderMouse();
+					}
+					else
+					{
+						draggingLabelWire = null;
+						isDragging = false;
+					}
+				}
+
+				if (mouseOver && !isDragging)
+				{
+					InteractionState.NotifyUnspecifiedElementUnderMouse();
+				}
+			}
+
+			Color bgCol = (mouseOver || isDragging)
+				? Color.Lerp(ActiveTheme.PinLabelCol, Color.white, 0.2f)
+				: ActiveTheme.PinLabelCol;
+
+			Draw.Quad(labelPos, size, bgCol);
+			Draw.Text(FontBold, wire.Label, FontSizePinLabel, labelPos, Anchor.TextFirstLineCentre, Color.white);
+		}
+
+		static Vector2 GetWirePointAtT(WireInstance wire, float t)
+		{
+			float totalLength = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+				totalLength += Vector2.Distance(wire.GetWirePoint(i), wire.GetWirePoint(i + 1));
+
+			if (totalLength == 0) return wire.GetWirePoint(0);
+
+			float target = totalLength * Mathf.Clamp01(t);
+			float accum = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+			{
+				Vector2 a = wire.GetWirePoint(i);
+				Vector2 b = wire.GetWirePoint(i + 1);
+				float segLen = Vector2.Distance(a, b);
+				if (accum + segLen >= target)
+					return Vector2.Lerp(a, b, (target - accum) / segLen);
+				accum += segLen;
+			}
+			return wire.GetWirePoint(wire.WirePointCount - 1);
+		}
+
+		static float ProjectMouseOntoWireT(WireInstance wire, Vector2 mousePos)
+		{
+			float totalLength = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+				totalLength += Vector2.Distance(wire.GetWirePoint(i), wire.GetWirePoint(i + 1));
+
+			if (totalLength == 0) return 0.5f;
+
+			float bestSqrDst = float.MaxValue;
+			float bestT = wire.LabelT;
+			float accum = 0;
+
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+			{
+				Vector2 a = wire.GetWirePoint(i);
+				Vector2 b = wire.GetWirePoint(i + 1);
+				float segLen = Vector2.Distance(a, b);
+				Vector2 closest = WireInstance.ClosestPointOnLineSegment(mousePos, a, b);
+				float sqrDst = (mousePos - closest).sqrMagnitude;
+				if (sqrDst < bestSqrDst)
+				{
+					bestSqrDst = sqrDst;
+					float localT = segLen > 0 ? Vector2.Distance(a, closest) / segLen : 0;
+					bestT = (accum + localT * segLen) / totalLength;
+				}
+				accum += segLen;
+			}
+
+			return Mathf.Clamp01(bestT);
 		}
 
 		// Wire should be highlighted if mouse is over it or if in edit mode

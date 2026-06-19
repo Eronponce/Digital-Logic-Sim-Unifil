@@ -17,5 +17,7 @@ namespace DLS.Description
 		public int ConnectedWireIndex;
 		public int ConnectedWireSegmentIndex;
 		public Vector2[] Points;
+		public string Label;
+		public float LabelT;
 	}
 }
