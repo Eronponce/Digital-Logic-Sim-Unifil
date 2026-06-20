@@ -1,10 +1,12 @@
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using UnityEngine;
 
 namespace DLS.CloudSync
 {
 	/// <summary>
-	/// Temporary: press F12 in Play Mode to dump cloud sync state to Desktop/cloud_sync_diag.log
-	/// Auto-injects itself at runtime — no scene setup needed. Remove after investigation.
+	/// Press F12 in Play Mode to dump cloud sync state to Desktop/cloud_sync_diag.log.
+	/// Active only in Editor and Development Builds — stripped from release builds.
+	/// Auto-injects itself at runtime; no scene setup needed.
 	/// </summary>
 	public class CloudSyncDiagTrigger : MonoBehaviour
 	{
@@ -28,3 +30,4 @@ namespace DLS.CloudSync
 		}
 	}
 }
+#endif

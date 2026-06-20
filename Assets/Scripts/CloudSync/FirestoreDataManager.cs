@@ -248,22 +248,32 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				// Chips are written first so that if the project document write fails,
-				// the subcollection remains consistent with what SyncProjectChipIndex reads on restore.
-				List<Task> chipTasks = new(chips.Count);
+				// Atomic write: all chip documents + project document committed together.
+				// If the batch fails, Firestore is left untouched - no orphan chips, no project
+				// doc declaring chips that don't exist.
+				// WriteBatch limit is 500 ops; we cap at 450 to leave headroom and split if needed.
+				WriteBatch batch = DB.StartBatch();
+				int opsInBatch = 0;
+
 				foreach (ChipDescription chip in chips)
 				{
-					chipTasks.Add(SaveChipDocumentAsync(chip, project.ProjectName));
+					DocumentReference chipRef = GetChipDocument(FirebaseAuthManager.UserId, project.ProjectName, chip.Name);
+					batch.Set(chipRef, BuildChipDocumentData(chip, project.ProjectName));
+					opsInBatch++;
+
+					if (opsInBatch >= 450)
+					{
+						await batch.CommitAsync();
+						batch = DB.StartBatch();
+						opsInBatch = 0;
+					}
 				}
 
-				if (chipTasks.Count > 0)
-				{
-					await Task.WhenAll(chipTasks);
-				}
+				DocumentReference projectRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
+				batch.Set(projectRef, BuildProjectDocumentData(project, chips.Count));
+				await batch.CommitAsync();
 
-				await SaveProjectDocumentAsync(project, chips.Count);
-
-				Log($"Project bundle saved: {project.ProjectName} ({chips.Count} chips)");
+				Log($"Project bundle saved (atomic): {project.ProjectName} ({chips.Count} chips)");
 				onSuccess?.Invoke();
 			}
 			catch (Exception ex)
@@ -422,6 +432,15 @@ namespace DLS.CloudSync
 		{
 			try
 			{
+				// Guard against race: Firestore.IsReady can flip true before Auth.CurrentUser
+				// is populated. Reading /turmas without auth fails with "Missing or insufficient
+				// permissions" even though rules permit any signed-in user.
+				if (!FirebaseAuthManager.IsLoggedIn)
+				{
+					onError?.Invoke("Not signed in");
+					return;
+				}
+
 				Query query = DB.Collection("turmas").WhereEqualTo("active", true);
 				QuerySnapshot snapshot = await query.GetSnapshotAsync();
 				List<TurmaData> turmas = new();
@@ -526,38 +545,40 @@ namespace DLS.CloudSync
 			}
 		}
 
-		async Task SaveProjectDocumentAsync(ProjectDescription project, int customChipCount)
+		static Dictionary<string, object> BuildProjectDocumentData(ProjectDescription project, int customChipCount)
 		{
-			DocumentReference docRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
-			string projectJson = Serializer.SerializeProjectDescription(project);
-
-			Dictionary<string, object> data = new()
+			return new Dictionary<string, object>
 			{
 				{ "projectName", project.ProjectName },
 				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(project.ProjectName) },
-				{ "projectData", projectJson },
+				{ "projectData", Serializer.SerializeProjectDescription(project) },
 				{ "customChipCount", customChipCount },
 				{ "lastModified", FieldValue.ServerTimestamp }
 			};
+		}
 
-			await docRef.SetAsync(data);
+		static Dictionary<string, object> BuildChipDocumentData(ChipDescription chip, string projectName)
+		{
+			return new Dictionary<string, object>
+			{
+				{ "chipName", chip.Name },
+				{ "chipLookupKey", CloudSyncPolicy.CreateLookupKey(chip.Name) },
+				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(projectName) },
+				{ "chipData", Serializer.SerializeChipDescription(chip) },
+				{ "lastModified", FieldValue.ServerTimestamp }
+			};
+		}
+
+		async Task SaveProjectDocumentAsync(ProjectDescription project, int customChipCount)
+		{
+			DocumentReference docRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
+			await docRef.SetAsync(BuildProjectDocumentData(project, customChipCount));
 		}
 
 		async Task SaveChipDocumentAsync(ChipDescription chip, string projectName)
 		{
 			DocumentReference docRef = GetChipDocument(FirebaseAuthManager.UserId, projectName, chip.Name);
-			string chipJson = Serializer.SerializeChipDescription(chip);
-
-			Dictionary<string, object> data = new()
-			{
-				{ "chipName", chip.Name },
-				{ "chipLookupKey", CloudSyncPolicy.CreateLookupKey(chip.Name) },
-				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(projectName) },
-				{ "chipData", chipJson },
-				{ "lastModified", FieldValue.ServerTimestamp }
-			};
-
-			await docRef.SetAsync(data);
+			await docRef.SetAsync(BuildChipDocumentData(chip, projectName));
 		}
 
 		async Task<List<ChipDescription>> LoadChipsForProjectAsync(DocumentReference projectDocument)

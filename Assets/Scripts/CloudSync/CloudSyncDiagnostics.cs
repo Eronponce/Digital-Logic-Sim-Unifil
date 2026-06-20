@@ -1,21 +1,27 @@
 using System;
+using System.Diagnostics;
 using System.IO;
-using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace DLS.CloudSync
 {
 	/// <summary>
-	/// Temporary diagnostic file logger for cloud sync. Remove after investigation.
-	/// Writes to Desktop/cloud_sync_diag.log — always findable regardless of Unity path config.
+	/// Diagnostic file logger for cloud sync investigations.
+	/// Active only in Unity Editor and Development Builds. Stripped from release builds
+	/// via [Conditional] attribute, so no file IO ships to students.
+	/// Writes to Desktop/cloud_sync_diag.log when active.
 	/// </summary>
 	public static class CloudSyncDiagnostics
 	{
-		// Desktop path — works on any Windows machine regardless of Unity profile state
+		const string DiagSymbol = "DEVELOPMENT_BUILD";
+		const string EditorSymbol = "UNITY_EDITOR";
+
 		static readonly string LogPath = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
 			"cloud_sync_diag.log"
 		);
 
+		[Conditional(DiagSymbol), Conditional(EditorSymbol)]
 		public static void Clear()
 		{
 			try
@@ -29,6 +35,7 @@ namespace DLS.CloudSync
 			}
 		}
 
+		[Conditional(DiagSymbol), Conditional(EditorSymbol)]
 		public static void Log(string message)
 		{
 			try
@@ -40,14 +47,13 @@ namespace DLS.CloudSync
 			catch { }
 		}
 
+		[Conditional(DiagSymbol), Conditional(EditorSymbol)]
 		public static void Section(string title)
 		{
 			Log($"\n--- {title} ---");
 		}
 
-		/// <summary>
-		/// Call this from any MonoBehaviour Update() with a keypress to dump current state on demand.
-		/// </summary>
+		[Conditional(DiagSymbol), Conditional(EditorSymbol)]
 		public static void DumpCurrentState()
 		{
 			Section("MANUAL DUMP");
