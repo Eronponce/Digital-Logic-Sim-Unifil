@@ -194,26 +194,37 @@ namespace DLS.SaveSystem
 
 			try
 			{
+				CloudSyncDiagnostics.Section($"SyncProjectBundleToCloud [{project.ProjectName}]");
+				CloudSyncDiagnostics.Log($"  sessionChips: {currentSessionChips?.Count ?? 0} [{string.Join(", ", currentSessionChips?.Select(c => c.Name) ?? System.Array.Empty<string>())}]");
+
 				BundleValidationResult validation = ValidateProjectBundle(project, currentSessionChips ?? Array.Empty<ChipDescription>(), Array.Empty<string>());
+
+				CloudSyncDiagnostics.Log($"  validation.IsValid: {validation.IsValid}");
 				if (!validation.IsValid)
 				{
 					string message = validation.CreateErrorMessage();
+					CloudSyncDiagnostics.Log($"  BLOCKED: {message}");
 					Debug.LogWarning($"[Cloud] Project bundle '{project.ProjectName}' blocked: {message}");
 					onError?.Invoke(message);
 					return;
 				}
 
+				CloudSyncDiagnostics.Log($"  validatedChips: [{string.Join(", ", validation.Chips.Select(c => c.Name))}]");
+
 				ProjectDescription projectToSync = SyncProjectChipIndex(project, validation.Chips);
+				CloudSyncDiagnostics.Log($"  uploading {validation.Chips.Length} chips (chips first, project doc after)");
 				Debug.Log($"[Cloud] Starting current-session project bundle sync: {projectToSync.ProjectName} ({validation.Chips.Length} chips)");
 
 				FirestoreDataManager.SaveProjectBundle(projectToSync, validation.Chips,
 					onSuccess: () =>
 					{
+						CloudSyncDiagnostics.Log($"  SYNC OK: {projectToSync.ProjectName}");
 						Debug.Log($"[Cloud] Project bundle '{projectToSync.ProjectName}' synced");
 						onSuccess?.Invoke();
 					},
 					onError: error =>
 					{
+						CloudSyncDiagnostics.Log($"  SYNC FAILED: {error}");
 						Debug.LogWarning($"[Cloud] Failed to sync project bundle '{projectToSync.ProjectName}': {error}");
 						onError?.Invoke(error);
 					}
@@ -221,6 +232,7 @@ namespace DLS.SaveSystem
 			}
 			catch (Exception ex)
 			{
+				CloudSyncDiagnostics.Log($"  EXCEPTION: {ex.Message}");
 				Debug.LogError($"[Cloud] Failed to prepare project bundle sync: {ex.Message}");
 				onError?.Invoke(ex.Message);
 			}
@@ -328,15 +340,20 @@ namespace DLS.SaveSystem
 				return;
 			}
 
+			CloudSyncDiagnostics.Clear();
+			CloudSyncDiagnostics.Section("LoadAllProjectsFromCloud");
+			CloudSyncDiagnostics.Log($"User: {FirebaseAuthManager.UserEmail}");
 			Debug.Log("[Cloud] Loading project bundles from cloud...");
 
 			FirestoreDataManager.LoadAllProjectBundles(
 				onSuccess: bundles =>
 				{
+					CloudSyncDiagnostics.Log($"Cloud bundles found: {bundles.Count}");
 					Debug.Log($"[Cloud] Found {bundles.Count} project bundles in cloud");
 
 					if (bundles.Count == 0)
 					{
+						CloudSyncDiagnostics.Log("No bundles — nothing to restore.");
 						onComplete?.Invoke(0);
 						return;
 					}
@@ -348,18 +365,34 @@ namespace DLS.SaveSystem
 					{
 						try
 						{
+							CloudSyncDiagnostics.Section($"Project: {bundle.ProjectDescription.ProjectName}");
+							CloudSyncDiagnostics.Log($"  cloud chips in subcollection : {bundle.Chips.Count} [{string.Join(", ", bundle.Chips.Select(c => c.Name))}]");
+							CloudSyncDiagnostics.Log($"  cloud AllCustomChipNames (raw): [{string.Join(", ", bundle.ProjectDescription.AllCustomChipNames ?? System.Array.Empty<string>())}]");
+							CloudSyncDiagnostics.Log($"  cloud LastSaveTime           : {bundle.ProjectDescription.LastSaveTime:yyyy-MM-dd HH:mm:ss}");
+
 							ProjectDescription cloudProject = SyncProjectChipIndex(bundle.ProjectDescription, bundle.Chips);
+							CloudSyncDiagnostics.Log($"  cloud AllCustomChipNames (reconciled): [{string.Join(", ", cloudProject.AllCustomChipNames ?? System.Array.Empty<string>())}]");
+
 							bool shouldRestore = !Loader.ProjectExists(cloudProject.ProjectName);
+							CloudSyncDiagnostics.Log($"  localProjectExists: {!shouldRestore}");
 
 							if (!shouldRestore)
 							{
 								ProjectDescription localProject = Loader.LoadProjectDescription(cloudProject.ProjectName);
 								bool localChipDataComplete = Loader.ProjectHasCompleteLocalChipData(localProject);
+								CloudSyncDiagnostics.Log($"  local AllCustomChipNames     : [{string.Join(", ", localProject.AllCustomChipNames ?? System.Array.Empty<string>())}]");
+								CloudSyncDiagnostics.Log($"  local LastSaveTime           : {localProject.LastSaveTime:yyyy-MM-dd HH:mm:ss}");
+								CloudSyncDiagnostics.Log($"  localChipDataComplete        : {localChipDataComplete}");
 								shouldRestore = CloudSyncPolicy.ShouldRestoreCloudProject(localProject, cloudProject, localChipDataComplete);
+							}
+							else
+							{
+								CloudSyncDiagnostics.Log("  → project not on disk, will restore");
 							}
 
 							if (shouldRestore)
 							{
+								CloudSyncDiagnostics.Log($"  → RESTORING {bundle.Chips.Count} chips from cloud");
 								RestoreProjectBundleLocally(cloudProject, bundle.Chips);
 								loadedCount++;
 								Debug.Log($"[Cloud] Restored '{cloudProject.ProjectName}' with {bundle.Chips.Count} chips");
@@ -367,20 +400,25 @@ namespace DLS.SaveSystem
 							else
 							{
 								skippedCount++;
+								CloudSyncDiagnostics.Log("  → SKIPPED (local up to date)");
 								Debug.Log($"[Cloud] Skipped '{cloudProject.ProjectName}' (local version is up to date)");
 							}
 						}
 						catch (Exception ex)
 						{
+							CloudSyncDiagnostics.Log($"  ERROR: {ex.Message}\n{ex.StackTrace}");
 							Debug.LogError($"[Cloud] Failed to restore project bundle: {ex.Message}");
 						}
 					}
 
+					CloudSyncDiagnostics.Section("Done");
+					CloudSyncDiagnostics.Log($"Restored: {loadedCount}  Skipped: {skippedCount}");
 					Debug.Log($"[Cloud] Project restore finished: {loadedCount} loaded, {skippedCount} skipped");
 					onComplete?.Invoke(loadedCount);
 				},
 				onError: error =>
 				{
+					CloudSyncDiagnostics.Log($"ERROR loading bundles: {error}");
 					Debug.LogError($"[Cloud] Failed to load projects: {error}");
 					onComplete?.Invoke(0);
 				}
@@ -493,18 +531,35 @@ namespace DLS.SaveSystem
 
 		static void RestoreProjectBundleLocally(ProjectDescription project, IReadOnlyList<ChipDescription> chips)
 		{
-			string chipsPath = SavePaths.GetChipsPath(project.ProjectName);
-			if (Directory.Exists(chipsPath))
-			{
-				Directory.Delete(chipsPath, true);
-			}
+			// Write cloud data first so an interrupted restore never leaves the chips directory empty.
+			// Orphaned local files (not in cloud set) are removed only after all cloud chips are written.
+			CloudSyncDiagnostics.Log($"  RestoreProjectBundleLocally: writing {chips.Count} chips");
 
 			Saver.SaveProjectDescription(project, syncToCloud: false, updateSaveMetadata: false);
+			CloudSyncDiagnostics.Log("    project description written");
 
 			foreach (ChipDescription chip in chips)
 			{
 				Saver.SaveChip(chip, project.ProjectName, syncToCloud: false);
+				CloudSyncDiagnostics.Log($"    chip written: {chip.Name}");
 			}
+
+			string chipsPath = SavePaths.GetChipsPath(project.ProjectName);
+			if (Directory.Exists(chipsPath))
+			{
+				HashSet<string> cloudChipNames = new(chips.Select(c => c.Name), ChipDescription.NameComparer);
+				foreach (string file in Directory.GetFiles(chipsPath, "*.json"))
+				{
+					string chipName = Path.GetFileNameWithoutExtension(file);
+					if (!cloudChipNames.Contains(chipName))
+					{
+						File.Delete(file);
+						CloudSyncDiagnostics.Log($"    orphan deleted: {chipName}");
+					}
+				}
+			}
+
+			CloudSyncDiagnostics.Log("  RestoreProjectBundleLocally: done");
 		}
 	}
 }

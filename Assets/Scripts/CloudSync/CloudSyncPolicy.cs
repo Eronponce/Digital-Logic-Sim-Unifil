@@ -20,10 +20,20 @@ namespace DLS.CloudSync
 		{
 			if (!localChipDataComplete)
 			{
-				return true;
+				// cloudProject.AllCustomChipNames is already reconciled by SyncProjectChipIndex to
+				// reflect chips that actually exist in the Firestore subcollection.
+				// Only restore if cloud has at least as many chips as local declares,
+				// so an incomplete cloud bundle never overwrites more complete local data.
+				int localDeclared = localProject.AllCustomChipNames?.Length ?? 0;
+				int cloudActual = cloudProject.AllCustomChipNames?.Length ?? 0;
+				bool restore = cloudActual >= localDeclared;
+				CloudSyncDiagnostics.Log($"ShouldRestore [{localProject.ProjectName}]: localChipDataIncomplete → localDeclared={localDeclared} cloudActual={cloudActual} → restore={restore}");
+				return restore;
 			}
 
-			return cloudProject.LastSaveTime > localProject.LastSaveTime;
+			bool result = cloudProject.LastSaveTime > localProject.LastSaveTime;
+			CloudSyncDiagnostics.Log($"ShouldRestore [{localProject.ProjectName}]: localComplete → cloudTime={cloudProject.LastSaveTime:yyyy-MM-dd HH:mm:ss} localTime={localProject.LastSaveTime:yyyy-MM-dd HH:mm:ss} → restore={result}");
+			return result;
 		}
 
 		public static AppUserRole ResolveSuggestedRole(string email, IEnumerable<string> teacherEmailAllowlist)
@@ -93,11 +103,11 @@ namespace DLS.CloudSync
 			return -1;
 		}
 
-		public static bool HasRequiredStudentMetadata(string studentName, string registrationNumber, string teacherName)
+		public static bool HasRequiredStudentMetadata(string studentName, string registrationNumber, string teacherName, string turmaId = "")
 		{
 			return !string.IsNullOrWhiteSpace(studentName)
 				&& !string.IsNullOrWhiteSpace(registrationNumber)
-				&& TryNormalizeTeacherName(teacherName, out _);
+				&& (!string.IsNullOrWhiteSpace(turmaId) || TryNormalizeTeacherName(teacherName, out _));
 		}
 
 		public static AppUserRole ParseRole(string persistedRole)

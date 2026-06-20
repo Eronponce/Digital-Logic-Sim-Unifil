@@ -129,6 +129,16 @@ namespace DLS.CloudSync
 			Instance.LoadChipsAsync(projectName, onSuccess, onError);
 		}
 
+		public static void LoadTurmas(Action<List<TurmaData>> onSuccess, Action<string> onError = null)
+		{
+			if (!IsReady)
+			{
+				onError?.Invoke("Firestore not ready");
+				return;
+			}
+			Instance.LoadTurmasAsync(onSuccess, onError);
+		}
+
 		public static void DeleteProject(string projectName, Action onSuccess = null, Action<string> onError = null)
 		{
 			if (!EnsureAuthenticated(onError))
@@ -238,8 +248,8 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				await SaveProjectDocumentAsync(project, chips.Count);
-
+				// Chips are written first so that if the project document write fails,
+				// the subcollection remains consistent with what SyncProjectChipIndex reads on restore.
 				List<Task> chipTasks = new(chips.Count);
 				foreach (ChipDescription chip in chips)
 				{
@@ -250,6 +260,8 @@ namespace DLS.CloudSync
 				{
 					await Task.WhenAll(chipTasks);
 				}
+
+				await SaveProjectDocumentAsync(project, chips.Count);
 
 				Log($"Project bundle saved: {project.ProjectName} ({chips.Count} chips)");
 				onSuccess?.Invoke();
@@ -406,6 +418,33 @@ namespace DLS.CloudSync
 			}
 		}
 
+		async void LoadTurmasAsync(Action<List<TurmaData>> onSuccess, Action<string> onError)
+		{
+			try
+			{
+				Query query = DB.Collection("turmas").WhereEqualTo("active", true);
+				QuerySnapshot snapshot = await query.GetSnapshotAsync();
+				List<TurmaData> turmas = new();
+				foreach (DocumentSnapshot doc in snapshot.Documents)
+				{
+					turmas.Add(new TurmaData
+					{
+						Id = doc.Id,
+						TeacherName = doc.TryGetValue("teacherName", out string t) ? t : string.Empty,
+						ProjectName = doc.TryGetValue("projectName", out string p) ? p : string.Empty,
+						DisplayName = doc.TryGetValue("displayName", out string d) ? d : string.Empty,
+						Active = true
+					});
+				}
+				onSuccess?.Invoke(turmas);
+			}
+			catch (Exception ex)
+			{
+				LogError($"Failed to load turmas: {ex.Message}");
+				onError?.Invoke(ex.Message);
+			}
+		}
+
 		async void UpsertUserProfileAsync(FirebaseUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData, Action<CloudUserProfile> onSuccess, Action<string> onError)
 		{
 			try
@@ -432,6 +471,7 @@ namespace DLS.CloudSync
 				string existingDisplayName = GetPersistedString(existingSnapshot, "displayName", "studentName");
 				string existingRegistrationNumber = GetPersistedString(existingSnapshot, "registrationNumber", "matricula");
 				string existingTeacherName = GetPersistedString(existingSnapshot, "teacherName", "teacher");
+				string existingTurmaId = GetPersistedString(existingSnapshot, "turmaId");
 				string displayName = ResolveDisplayName(user, studentProfileData, existingDisplayName);
 				string registrationNumber = CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					? ResolveRegistrationNumber(studentProfileData, existingRegistrationNumber)
@@ -439,8 +479,14 @@ namespace DLS.CloudSync
 				string teacherName = CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					? ResolveTeacherName(studentProfileData, existingTeacherName)
 					: string.Empty;
+				string turmaId = CloudSyncPolicy.RequiresStudentProfile(finalRole)
+					? (string.IsNullOrWhiteSpace(studentProfileData?.TurmaId) ? existingTurmaId : studentProfileData.TurmaId)
+					: string.Empty;
+				string turmaProjectName = CloudSyncPolicy.RequiresStudentProfile(finalRole)
+					? (studentProfileData?.TurmaProjectName ?? string.Empty)
+					: string.Empty;
 				bool profileCompleted = !CloudSyncPolicy.RequiresStudentProfile(finalRole)
-					|| CloudSyncPolicy.HasRequiredStudentMetadata(displayName, registrationNumber, teacherName);
+					|| CloudSyncPolicy.HasRequiredStudentMetadata(displayName, registrationNumber, teacherName, turmaId);
 
 				Dictionary<string, object> data = new()
 				{
@@ -453,6 +499,8 @@ namespace DLS.CloudSync
 					{ "teacherName", teacherName },
 					{ "teacher", teacherName },
 					{ "teacherLookupKey", CloudSyncPolicy.CreateLookupKey(teacherName) },
+					{ "turmaId", turmaId },
+					{ "turmaProjectName", turmaProjectName },
 					{ "profileCompleted", profileCompleted },
 					{ "role", CloudSyncPolicy.ToPersistedRole(finalRole) },
 					{ "isTeacher", finalRole == AppUserRole.Teacher },
@@ -467,7 +515,7 @@ namespace DLS.CloudSync
 
 				await userDoc.SetAsync(data, SetOptions.MergeAll);
 
-				CloudUserProfile profile = new(user.UserId, user.Email, displayName, finalRole, approved, registrationNumber, teacherName, profileCompleted);
+				CloudUserProfile profile = new(user.UserId, user.Email, displayName, finalRole, approved, registrationNumber, teacherName, profileCompleted, turmaId);
 				Log($"User profile synced: {profile.DisplayName} ({profile.RoleLabel})");
 				onSuccess?.Invoke(profile);
 			}
