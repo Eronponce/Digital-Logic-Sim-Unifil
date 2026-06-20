@@ -908,6 +908,22 @@ namespace DLS.Game
 			void CompleteConnection(WireInstance.ConnectionInfo info)
 			{
 				WireToPlace.FinishPlacingWire(info);
+
+				// Apply saved pin style to new wire
+				PinInstance srcPin = WireToPlace.SourcePin;
+				if (srcPin != null)
+				{
+					if (srcPin.HasInheritedWireColour)
+					{
+						WireToPlace.HasCustomColour = true;
+						WireToPlace.CustomColour = srcPin.InheritedWireColour;
+					}
+					if (srcPin.InheritedWirePattern != WirePattern.None)
+					{
+						WireToPlace.Pattern = srcPin.InheritedWirePattern;
+					}
+				}
+
 				ActiveDevChip.AddWire(WireToPlace, false);
 				ActiveDevChip.UndoController.RecordAddWire(WireToPlace);
 			}

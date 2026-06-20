@@ -54,12 +54,15 @@ namespace DLS.Graphics
 				}
 			}
 
-			hasCustomColour = false;
-			customColour = DrawSettings.GetStateColour(true, (uint)sourcePin.Colour);
-			customColour.a = 1f;
-			opacitySlider.progressT = 1f;
+			// No wire connected — restore from pin's saved style if any
+			hasCustomColour = sourcePin.HasInheritedWireColour;
+			Color savedCol = sourcePin.HasInheritedWireColour
+				? sourcePin.InheritedWireColour
+				: DrawSettings.GetStateColour(true, (uint)sourcePin.Colour);
+			customColour = new Color(savedCol.r, savedCol.g, savedCol.b, 1f);
+			opacitySlider.progressT = sourcePin.HasInheritedWireColour ? Mathf.Clamp01(sourcePin.InheritedWireColour.a) : 1f;
 			UI.GetColourPickerState(ID_ColourPicker).SetRGB(customColour);
-			pattern = WirePattern.None;
+			pattern = sourcePin.InheritedWirePattern;
 		}
 
 		public static void DrawMenu()
@@ -188,17 +191,24 @@ namespace DLS.Graphics
 		static void ApplyToAllConnectedWires()
 		{
 			float alpha = Mathf.Clamp01(opacitySlider.progressT);
+			Color appliedColour = hasCustomColour
+				? new Color(customColour.r, customColour.g, customColour.b, alpha)
+				: Color.clear;
+
 			foreach (WireInstance w in Project.ActiveProject.ViewedChip.Wires)
 			{
 				if (w.IsFullyConnected && WireMatchesContextPin(w))
 				{
 					w.HasCustomColour = hasCustomColour;
-					w.CustomColour = hasCustomColour
-						? new Color(customColour.r, customColour.g, customColour.b, alpha)
-						: Color.clear;
+					w.CustomColour = appliedColour;
 					w.Pattern = pattern;
 				}
 			}
+
+			// Persist style on the pin so future wires from this pin inherit it
+			sourcePin.HasInheritedWireColour = hasCustomColour;
+			sourcePin.InheritedWireColour = appliedColour;
+			sourcePin.InheritedWirePattern = pattern;
 		}
 	}
 }
