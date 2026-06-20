@@ -295,8 +295,16 @@ namespace DLS.Graphics
 
 
 			// Draw outline and body
-			Draw.Quad(pos, desc.Size + Vector2.one * ChipOutlineWidth, outlineCol);
-			Draw.Quad(pos, desc.Size, chipCol);
+			bool isGate = GateSymbolDrawer.IsGateChip(subchip);
+			if (isGate)
+			{
+				GateSymbolDrawer.Draw(subchip, chipCol, outlineCol);
+			}
+			else
+			{
+				Draw.Quad(pos, desc.Size + Vector2.one * ChipOutlineWidth, outlineCol);
+				Draw.Quad(pos, desc.Size, chipCol);
+			}
 
 			// Mouse over detection
 			if (InputHelper.MouseInsideBounds_World(pos, desc.Size))
@@ -308,8 +316,8 @@ namespace DLS.Graphics
 				}
 			}
 
-			// Draw name
-			if (isKeyChip || desc.NameLocation != NameDisplayLocation.Hidden)
+			// Draw name (skip for gate symbols — shape communicates the gate type)
+			if (isGate || isKeyChip || desc.NameLocation != NameDisplayLocation.Hidden)
 			{
 				// Display on single line if name fits comfortably, otherwise use 'formatted' version (split across multiple lines)
 				string displayName = isKeyChip ? subchip.activationKeyString : subchip.MultiLineName;
@@ -973,7 +981,7 @@ namespace DLS.Graphics
 
 			// Draw
 			Color col = wire.GetColour(0);
-			WirePattern effectivePattern1Bit = wire.Pattern != WirePattern.None ? wire.Pattern : wire.SourcePin.InheritedWirePattern;
+			WirePattern effectivePattern1Bit = wire.Pattern != WirePattern.None ? wire.Pattern : (wire.SourcePin?.InheritedWirePattern ?? WirePattern.None);
 			float interactSqrDst = effectivePattern1Bit switch
 			{
 				WirePattern.Dashed => WireDrawer.DrawWireDashed(wire.BitWires[0].Points, thickness, col, mousePos),
@@ -1008,7 +1016,7 @@ namespace DLS.Graphics
 			WireLayoutHelper.CreateMultiBitWireLayout(wire.BitWires, wire, WireThickness);
 
 			// Draw
-			WirePattern inheritedPatternMultiBit = wire.SourcePin.InheritedWirePattern;
+			WirePattern inheritedPatternMultiBit = wire.SourcePin?.InheritedWirePattern ?? WirePattern.None;
 			for (int bitIndex = 0; bitIndex < wire.BitWires.Length; bitIndex++)
 			{
 				WireInstance.BitWire bitWire = wire.BitWires[bitIndex];
