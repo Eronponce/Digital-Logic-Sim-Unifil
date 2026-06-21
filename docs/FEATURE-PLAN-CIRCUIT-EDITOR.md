@@ -79,14 +79,8 @@ Retrocompatível (campos opcionais, default = sem estilo).
 
 ---
 
-### 5. Mini-mapa (MINIMAP)
-**Possível?** Sim, mas requer investigação do sistema de câmera SebVis.
-**Impacto no salvamento:** NENHUM.
-**Adiado:** implementar depois das outras features.
-
----
-
 ## Features descartadas
+- Mini-mapa
 - Auto-colorir por tipo de chip
 - Cor de fio independente do sinal (substituído por 4b)
 - Regiões visuais (4d)
@@ -105,4 +99,3 @@ Retrocompatível (campos opcionais, default = sem estilo).
 3. **Textura/padrão nos fios (4b)** — organiza circuitos densos
 4. **Comentários** — valor pedagógico alto
 5. **Gate symbols** — visual puro, zero risco de dados
-6. **Mini-mapa** — investigar depois

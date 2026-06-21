@@ -18,14 +18,17 @@ namespace DLS.Game
 		public static bool CreateNewChipShortcutTriggered => CtrlShortcutTriggered(KeyCode.N);
 		public static bool QuitToMainMenuShortcutTriggered => CtrlShortcutTriggered(KeyCode.Q);
 		public static bool SearchShortcutTriggered => CtrlShortcutTriggered(KeyCode.F);
+		public static bool HotkeyGuideShortcutTriggered => InputHelper.IsKeyDownThisFrame(KeyCode.F1);
 
 
 		// ---- Misc shortcuts ----
+		public static bool CopyShortcutTriggered => CtrlShortcutTriggered(KeyCode.C);
+		public static bool PasteShortcutTriggered => CtrlShortcutTriggered(KeyCode.V);
 		public static bool DuplicateShortcutTriggered => MultiModeHeld && InputHelper.IsKeyDownThisFrame(KeyCode.D);
 		public static bool ToggleGridShortcutTriggered => CtrlShortcutTriggered(KeyCode.G);
 		public static bool ResetCameraShortcutTriggered => CtrlShortcutTriggered(KeyCode.R);
 		public static bool UndoShortcutTriggered => CtrlShortcutTriggered(KeyCode.Z);
-		public static bool RedoShortcutTriggered => CtrlShiftShortcutTriggered(KeyCode.Z);
+		public static bool RedoShortcutTriggered => CtrlShiftShortcutTriggered(KeyCode.Z) || CtrlShortcutTriggered(KeyCode.Y);
 
 		// ---- Single key shortcuts ----
 		public static bool CancelShortcutTriggered => InputHelper.IsKeyDownThisFrame(KeyCode.Escape);

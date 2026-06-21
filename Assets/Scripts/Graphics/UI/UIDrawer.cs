@@ -24,7 +24,8 @@ namespace DLS.Graphics
 			WireLabelEdit,
 			WireStyleEdit,
 			PinColourPopup,
-			AnnotationEdit
+			AnnotationEdit,
+			HotkeyGuide
 		}
 
 		static MenuType activeMenuOld;
@@ -76,6 +77,7 @@ namespace DLS.Graphics
 			else if (menuToDraw == MenuType.WireStyleEdit) WireStyleMenu.DrawMenu();
 			else if (menuToDraw == MenuType.PinColourPopup) PinColourMenu.DrawMenu();
 			else if (menuToDraw == MenuType.AnnotationEdit) AnnotationEditMenu.DrawMenu();
+			else if (menuToDraw == MenuType.HotkeyGuide) HotkeyGuideMenu.DrawMenu();
 			else
 			{
 				bool showSimPausedBanner = project.simPaused;
