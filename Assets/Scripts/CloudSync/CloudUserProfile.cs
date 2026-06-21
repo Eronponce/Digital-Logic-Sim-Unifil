@@ -16,7 +16,8 @@ namespace DLS.CloudSync
 			false,
 			string.Empty,
 			string.Empty,
-			false);
+			false,
+			string.Empty);
 
 		public string UserId { get; }
 		public string Email { get; }
@@ -25,12 +26,13 @@ namespace DLS.CloudSync
 		public bool IsApproved { get; }
 		public string RegistrationNumber { get; }
 		public string TeacherName { get; }
+		public string TurmaId { get; }
 		public bool HasCompletedStudentProfile { get; }
 		public bool IsTeacher => Role == AppUserRole.Teacher;
-		public bool RequiresStudentProfileCompletion => !IsTeacher && !HasCompletedStudentProfile;
+		public bool RequiresStudentProfileCompletion => !IsTeacher && (!HasCompletedStudentProfile || string.IsNullOrEmpty(TurmaId));
 		public string RoleLabel => IsTeacher ? "Professor" : "Aluno";
 
-		public CloudUserProfile(string userId, string email, string displayName, AppUserRole role, bool isApproved, string registrationNumber, string teacherName, bool hasCompletedStudentProfile)
+		public CloudUserProfile(string userId, string email, string displayName, AppUserRole role, bool isApproved, string registrationNumber, string teacherName, bool hasCompletedStudentProfile, string turmaId = "")
 		{
 			UserId = userId ?? string.Empty;
 			Email = email ?? string.Empty;
@@ -39,6 +41,7 @@ namespace DLS.CloudSync
 			IsApproved = isApproved;
 			RegistrationNumber = registrationNumber?.Trim() ?? string.Empty;
 			TeacherName = teacherName?.Trim() ?? string.Empty;
+			TurmaId = turmaId?.Trim() ?? string.Empty;
 			HasCompletedStudentProfile = IsTeacher || hasCompletedStudentProfile;
 		}
 	}

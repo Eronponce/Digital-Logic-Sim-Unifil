@@ -39,6 +39,14 @@ namespace DLS.CloudSync
 		[Header("Role Bootstrap")]
 		[SerializeField] string[] teacherEmailAllowlist = Array.Empty<string>();
 
+		const string KeepLoggedInKey = "DLS_KeepLoggedIn";
+
+		public static bool KeepLoggedIn
+		{
+			get => PlayerPrefs.GetInt(KeepLoggedInKey, 0) == 1;
+			set { PlayerPrefs.SetInt(KeepLoggedInKey, value ? 1 : 0); PlayerPrefs.Save(); }
+		}
+
 		string lastProcessedUserId = string.Empty;
 		Coroutine signInBootstrapCoroutine;
 		bool signOutInProgress;
@@ -72,12 +80,17 @@ namespace DLS.CloudSync
 			Auth.StateChanged -= OnAuthStateChanged;
 			Auth.StateChanged += OnAuthStateChanged;
 
-			// Safety rule for shared classroom computers:
-			// always clear any persisted Firebase session on app startup.
 			if (CurrentUser != null)
 			{
-				Log("Forcing sign-out on startup to avoid reusing the previous student's session.");
-				Auth.SignOut();
+				if (KeepLoggedIn)
+				{
+					Log("KeepLoggedIn active — skipping startup sign-out.");
+				}
+				else
+				{
+					Log("Forcing sign-out on startup (shared computer safety).");
+					Auth.SignOut();
+				}
 			}
 
 			Log($"Auth initialized. Persist session: {persistSession}");
@@ -236,6 +249,8 @@ namespace DLS.CloudSync
 			{
 				return;
 			}
+
+			KeepLoggedIn = false;
 
 			if (Instance.signOutInProgress)
 			{
@@ -411,7 +426,7 @@ namespace DLS.CloudSync
 					return;
 				}
 
-				if (studentProfileData == null || !CloudSyncPolicy.HasRequiredStudentMetadata(studentProfileData.StudentName, studentProfileData.RegistrationNumber, studentProfileData.TeacherName))
+				if (studentProfileData == null || !CloudSyncPolicy.HasRequiredStudentMetadata(studentProfileData.StudentName, studentProfileData.RegistrationNumber, studentProfileData.TeacherName, studentProfileData.TurmaId))
 				{
 					OnAuthError?.Invoke("Fill in name, matrícula and professor before saving the profile.");
 					return;
