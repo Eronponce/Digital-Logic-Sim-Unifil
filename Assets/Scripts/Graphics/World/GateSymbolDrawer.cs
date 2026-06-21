@@ -177,7 +177,7 @@ namespace DLS.Graphics
 			float hw = chip.Size.x * 0.5f;
 			float hh = chip.Size.y * 0.5f;
 
-			float tipX = pos.x + hw - BubbleR * 2f;
+			float tipX = pos.x + hw + BubbleR; // tip pierces through the bubble
 			var TL = new Vector2(pos.x - hw, pos.y + hh);
 			var BL = new Vector2(pos.x - hw, pos.y - hh);
 			var RT = new Vector2(tipX, pos.y);
