@@ -28,6 +28,10 @@ namespace DLS.EditorTools {
 			BuildPlayer(WindowsBuildOutput, BuildTarget.StandaloneWindows64, BuildOptions.None, "Windows");
 		}
 
+		public static void BuildWindowsPlayerCommunityRelease() {
+			BuildPlayer(WindowsBuildOutput, BuildTarget.StandaloneWindows64, BuildOptions.None, "Windows (Community)", extraDefines: new[] { "DLS_COMMUNITY" });
+		}
+
 		public static void BuildLinuxPlayerDev() {
 			BuildPlayer(LinuxBuildOutput, BuildTarget.StandaloneLinux64, BuildOptions.Development | BuildOptions.AllowDebugging, "Linux");
 		}
@@ -36,7 +40,11 @@ namespace DLS.EditorTools {
 			BuildPlayer(LinuxBuildOutput, BuildTarget.StandaloneLinux64, BuildOptions.None, "Linux");
 		}
 
-		static void BuildPlayer(string relativeOutputPath, BuildTarget target, BuildOptions buildOptions, string platformLabel) {
+		public static void BuildLinuxPlayerCommunityRelease() {
+			BuildPlayer(LinuxBuildOutput, BuildTarget.StandaloneLinux64, BuildOptions.None, "Linux (Community)", extraDefines: new[] { "DLS_COMMUNITY" });
+		}
+
+		static void BuildPlayer(string relativeOutputPath, BuildTarget target, BuildOptions buildOptions, string platformLabel, string[] extraDefines = null) {
 			string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 			string outputPath = Path.Combine(projectRoot, relativeOutputPath);
 			string outputDirectory = Path.GetDirectoryName(outputPath);
@@ -51,7 +59,8 @@ namespace DLS.EditorTools {
 				scenes = new[] { MainScenePath },
 				locationPathName = outputPath,
 				target = target,
-				options = buildOptions
+				options = buildOptions,
+				extraScriptingDefines = extraDefines ?? Array.Empty<string>()
 			};
 
 			Debug.Log($"[Build] Starting {platformLabel} build at {outputPath}");
