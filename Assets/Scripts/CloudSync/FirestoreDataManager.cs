@@ -129,6 +129,16 @@ namespace DLS.CloudSync
 			Instance.LoadChipsAsync(projectName, onSuccess, onError);
 		}
 
+		public static void LoadTurmas(Action<List<TurmaData>> onSuccess, Action<string> onError = null)
+		{
+			if (!IsReady)
+			{
+				onError?.Invoke("Firestore not ready");
+				return;
+			}
+			Instance.LoadTurmasAsync(onSuccess, onError);
+		}
+
 		public static void DeleteProject(string projectName, Action onSuccess = null, Action<string> onError = null)
 		{
 			if (!EnsureAuthenticated(onError))
@@ -238,20 +248,32 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				await SaveProjectDocumentAsync(project, chips.Count);
+				// Atomic write: all chip documents + project document committed together.
+				// If the batch fails, Firestore is left untouched - no orphan chips, no project
+				// doc declaring chips that don't exist.
+				// WriteBatch limit is 500 ops; we cap at 450 to leave headroom and split if needed.
+				WriteBatch batch = DB.StartBatch();
+				int opsInBatch = 0;
 
-				List<Task> chipTasks = new(chips.Count);
 				foreach (ChipDescription chip in chips)
 				{
-					chipTasks.Add(SaveChipDocumentAsync(chip, project.ProjectName));
+					DocumentReference chipRef = GetChipDocument(FirebaseAuthManager.UserId, project.ProjectName, chip.Name);
+					batch.Set(chipRef, BuildChipDocumentData(chip, project.ProjectName));
+					opsInBatch++;
+
+					if (opsInBatch >= 450)
+					{
+						await batch.CommitAsync();
+						batch = DB.StartBatch();
+						opsInBatch = 0;
+					}
 				}
 
-				if (chipTasks.Count > 0)
-				{
-					await Task.WhenAll(chipTasks);
-				}
+				DocumentReference projectRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
+				batch.Set(projectRef, BuildProjectDocumentData(project, chips.Count));
+				await batch.CommitAsync();
 
-				Log($"Project bundle saved: {project.ProjectName} ({chips.Count} chips)");
+				Log($"Project bundle saved (atomic): {project.ProjectName} ({chips.Count} chips)");
 				onSuccess?.Invoke();
 			}
 			catch (Exception ex)
@@ -406,6 +428,42 @@ namespace DLS.CloudSync
 			}
 		}
 
+		async void LoadTurmasAsync(Action<List<TurmaData>> onSuccess, Action<string> onError)
+		{
+			try
+			{
+				// Guard against race: Firestore.IsReady can flip true before Auth.CurrentUser
+				// is populated. Reading /turmas without auth fails with "Missing or insufficient
+				// permissions" even though rules permit any signed-in user.
+				if (!FirebaseAuthManager.IsLoggedIn)
+				{
+					onError?.Invoke("Not signed in");
+					return;
+				}
+
+				Query query = DB.Collection("turmas").WhereEqualTo("active", true);
+				QuerySnapshot snapshot = await query.GetSnapshotAsync();
+				List<TurmaData> turmas = new();
+				foreach (DocumentSnapshot doc in snapshot.Documents)
+				{
+					turmas.Add(new TurmaData
+					{
+						Id = doc.Id,
+						TeacherName = doc.TryGetValue("teacherName", out string t) ? t : string.Empty,
+						ProjectName = doc.TryGetValue("projectName", out string p) ? p : string.Empty,
+						DisplayName = doc.TryGetValue("displayName", out string d) ? d : string.Empty,
+						Active = true
+					});
+				}
+				onSuccess?.Invoke(turmas);
+			}
+			catch (Exception ex)
+			{
+				LogError($"Failed to load turmas: {ex.Message}");
+				onError?.Invoke(ex.Message);
+			}
+		}
+
 		async void UpsertUserProfileAsync(FirebaseUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData, Action<CloudUserProfile> onSuccess, Action<string> onError)
 		{
 			try
@@ -432,6 +490,7 @@ namespace DLS.CloudSync
 				string existingDisplayName = GetPersistedString(existingSnapshot, "displayName", "studentName");
 				string existingRegistrationNumber = GetPersistedString(existingSnapshot, "registrationNumber", "matricula");
 				string existingTeacherName = GetPersistedString(existingSnapshot, "teacherName", "teacher");
+				string existingTurmaId = GetPersistedString(existingSnapshot, "turmaId");
 				string displayName = ResolveDisplayName(user, studentProfileData, existingDisplayName);
 				string registrationNumber = CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					? ResolveRegistrationNumber(studentProfileData, existingRegistrationNumber)
@@ -439,8 +498,14 @@ namespace DLS.CloudSync
 				string teacherName = CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					? ResolveTeacherName(studentProfileData, existingTeacherName)
 					: string.Empty;
+				string turmaId = CloudSyncPolicy.RequiresStudentProfile(finalRole)
+					? (string.IsNullOrWhiteSpace(studentProfileData?.TurmaId) ? existingTurmaId : studentProfileData.TurmaId)
+					: string.Empty;
+				string turmaProjectName = CloudSyncPolicy.RequiresStudentProfile(finalRole)
+					? (studentProfileData?.TurmaProjectName ?? string.Empty)
+					: string.Empty;
 				bool profileCompleted = !CloudSyncPolicy.RequiresStudentProfile(finalRole)
-					|| CloudSyncPolicy.HasRequiredStudentMetadata(displayName, registrationNumber, teacherName);
+					|| CloudSyncPolicy.HasRequiredStudentMetadata(displayName, registrationNumber, teacherName, turmaId);
 
 				Dictionary<string, object> data = new()
 				{
@@ -453,6 +518,8 @@ namespace DLS.CloudSync
 					{ "teacherName", teacherName },
 					{ "teacher", teacherName },
 					{ "teacherLookupKey", CloudSyncPolicy.CreateLookupKey(teacherName) },
+					{ "turmaId", turmaId },
+					{ "turmaProjectName", turmaProjectName },
 					{ "profileCompleted", profileCompleted },
 					{ "role", CloudSyncPolicy.ToPersistedRole(finalRole) },
 					{ "isTeacher", finalRole == AppUserRole.Teacher },
@@ -467,7 +534,7 @@ namespace DLS.CloudSync
 
 				await userDoc.SetAsync(data, SetOptions.MergeAll);
 
-				CloudUserProfile profile = new(user.UserId, user.Email, displayName, finalRole, approved, registrationNumber, teacherName, profileCompleted);
+				CloudUserProfile profile = new(user.UserId, user.Email, displayName, finalRole, approved, registrationNumber, teacherName, profileCompleted, turmaId);
 				Log($"User profile synced: {profile.DisplayName} ({profile.RoleLabel})");
 				onSuccess?.Invoke(profile);
 			}
@@ -478,38 +545,40 @@ namespace DLS.CloudSync
 			}
 		}
 
-		async Task SaveProjectDocumentAsync(ProjectDescription project, int customChipCount)
+		static Dictionary<string, object> BuildProjectDocumentData(ProjectDescription project, int customChipCount)
 		{
-			DocumentReference docRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
-			string projectJson = Serializer.SerializeProjectDescription(project);
-
-			Dictionary<string, object> data = new()
+			return new Dictionary<string, object>
 			{
 				{ "projectName", project.ProjectName },
 				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(project.ProjectName) },
-				{ "projectData", projectJson },
+				{ "projectData", Serializer.SerializeProjectDescription(project) },
 				{ "customChipCount", customChipCount },
 				{ "lastModified", FieldValue.ServerTimestamp }
 			};
+		}
 
-			await docRef.SetAsync(data);
+		static Dictionary<string, object> BuildChipDocumentData(ChipDescription chip, string projectName)
+		{
+			return new Dictionary<string, object>
+			{
+				{ "chipName", chip.Name },
+				{ "chipLookupKey", CloudSyncPolicy.CreateLookupKey(chip.Name) },
+				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(projectName) },
+				{ "chipData", Serializer.SerializeChipDescription(chip) },
+				{ "lastModified", FieldValue.ServerTimestamp }
+			};
+		}
+
+		async Task SaveProjectDocumentAsync(ProjectDescription project, int customChipCount)
+		{
+			DocumentReference docRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
+			await docRef.SetAsync(BuildProjectDocumentData(project, customChipCount));
 		}
 
 		async Task SaveChipDocumentAsync(ChipDescription chip, string projectName)
 		{
 			DocumentReference docRef = GetChipDocument(FirebaseAuthManager.UserId, projectName, chip.Name);
-			string chipJson = Serializer.SerializeChipDescription(chip);
-
-			Dictionary<string, object> data = new()
-			{
-				{ "chipName", chip.Name },
-				{ "chipLookupKey", CloudSyncPolicy.CreateLookupKey(chip.Name) },
-				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(projectName) },
-				{ "chipData", chipJson },
-				{ "lastModified", FieldValue.ServerTimestamp }
-			};
-
-			await docRef.SetAsync(data);
+			await docRef.SetAsync(BuildChipDocumentData(chip, projectName));
 		}
 
 		async Task<List<ChipDescription>> LoadChipsForProjectAsync(DocumentReference projectDocument)

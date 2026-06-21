@@ -38,7 +38,16 @@ namespace DLS.Description
 		Blue,
 		Violet,
 		Pink,
-		White
+		White,
+		// Extended hue wheel (indices 8-15 — append-only for save compatibility)
+		RedOrange,
+		YellowOrange,
+		Lime,
+		Teal,
+		Cyan,
+		SkyBlue,
+		Indigo,
+		Magenta
 	}
 
 	public enum PinValueDisplayMode

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using DLS.Description;
 using DLS.Graphics;
+using DLS.Simulation;
 using UnityEngine;
 
 namespace DLS.Game
@@ -25,6 +26,11 @@ namespace DLS.Game
 		public int ConnectedWireRecursionDepth;
 		public int descriptionCreator_wireIndex;
 		public int drawOrder;
+		public string Label = string.Empty;
+		public float LabelT = 0.5f;
+		public bool HasCustomColour;
+		public Color CustomColour;
+		public WirePattern Pattern;
 
 		// An offset to be applied to all wire points (this is used when a wire is being moved, but the move has not yet been confirmed)
 		public Vector2 MoveOffset;
@@ -312,15 +318,30 @@ namespace DLS.Game
 
 		public Color GetColour(int bitIndex)
 		{
-			Color col = IsFullyConnected ? SourcePin.GetStateCol(bitIndex, false, false) : DrawSettings.ActiveTheme.StateDisconnectedCol;
-
-			if (bitCount != PinBitCount.Bit1 && bitIndex % 2 == 0)
+			if (!IsFullyConnected)
 			{
-				Color alternatingWireHighlightDisconnected = Color.white * 0.075f;
-				Color alternatingWireHighlightConnected = Color.white * 0.01f;
-				col += IsFullyConnected ? alternatingWireHighlightConnected : alternatingWireHighlightDisconnected;
+				Color disconnected = DrawSettings.ActiveTheme.StateDisconnectedCol;
+				if (bitCount != PinBitCount.Bit1 && bitIndex % 2 == 0) disconnected += Color.white * 0.075f;
+				return disconnected;
 			}
 
+			if (HasCustomColour)
+			{
+				uint state = PinState.GetBitTristatedValue(SourcePin.State, bitIndex);
+				float dimFactor = state == PinState.LogicHigh ? 1f : 0.25f;
+				return new Color(CustomColour.r * dimFactor, CustomColour.g * dimFactor, CustomColour.b * dimFactor, CustomColour.a);
+			}
+
+			if (SourcePin.HasInheritedWireColour)
+			{
+				uint state = PinState.GetBitTristatedValue(SourcePin.State, bitIndex);
+				float dimFactor = state == PinState.LogicHigh ? 1f : 0.25f;
+				Color ic = SourcePin.InheritedWireColour;
+				return new Color(ic.r * dimFactor, ic.g * dimFactor, ic.b * dimFactor, ic.a);
+			}
+
+			Color col = SourcePin.GetStateCol(bitIndex, false, false);
+			if (bitCount != PinBitCount.Bit1 && bitIndex % 2 == 0) col += Color.white * 0.01f;
 			return col;
 		}
 

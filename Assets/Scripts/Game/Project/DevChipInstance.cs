@@ -67,6 +67,7 @@ namespace DLS.Game
 			description.InputPins ??= Array.Empty<PinDescription>();
 			description.OutputPins ??= Array.Empty<PinDescription>();
 			description.Wires ??= Array.Empty<WireDescription>();
+			description.Annotations ??= Array.Empty<AnnotationDescription>();
 
 			bool anyElementFailedToLoad = false;
 
@@ -109,6 +110,10 @@ namespace DLS.Game
 				loadedWiresWithOriginalIndices[i] = loadedWire;
 				anyElementFailedToLoad |= failed;
 			}
+
+			// Load annotations
+			foreach (AnnotationDescription annDesc in description.Annotations)
+				instance.AddAnnotation(new AnnotationInstance(annDesc));
 
 			instance.RegenerateParentChipNamesHash();
 
@@ -167,6 +172,11 @@ namespace DLS.Game
 				};
 
 				loadedWire = new WireInstance(sourceConnection, targetConnection, wireDescription.Points, wireIndex);
+				loadedWire.Label = wireDescription.Label ?? string.Empty;
+				loadedWire.LabelT = wireDescription.LabelT == 0 ? 0.5f : wireDescription.LabelT;
+				loadedWire.HasCustomColour = wireDescription.HasCustomColour;
+				loadedWire.CustomColour = wireDescription.CustomColour;
+				loadedWire.Pattern = wireDescription.Pattern;
 			}
 			else
 			{
@@ -231,6 +241,10 @@ namespace DLS.Game
 				Simulator.AddPin(SimChip, pin.ID, pin.IsInputPin);
 			}
 		}
+
+		public void AddAnnotation(AnnotationInstance annotation) => AddElement(annotation);
+
+		public void DeleteAnnotation(AnnotationInstance annotation) => RemoveElement(annotation);
 
 		public void AddWire(WireInstance wire, bool isLoading, int insertIndex = -1)
 		{

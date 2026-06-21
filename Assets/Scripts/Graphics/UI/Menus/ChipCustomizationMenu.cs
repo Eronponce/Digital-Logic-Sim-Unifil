@@ -4,6 +4,7 @@ using System.Linq;
 using DLS.Description;
 using DLS.Game;
 using Seb.Helpers;
+using Seb.Types;
 using Seb.Vis;
 using Seb.Vis.UI;
 using UnityEngine;
@@ -17,6 +18,22 @@ namespace DLS.Graphics
 			"Name: Middle",
 			"Name: Top",
 			"Name: Hidden"
+		};
+
+		static readonly Color[] SwatchColors =
+		{
+			new(0.90f, 0.20f, 0.20f), // red
+			new(1.00f, 0.50f, 0.10f), // orange
+			new(0.95f, 0.85f, 0.10f), // yellow
+			new(0.20f, 0.80f, 0.20f), // green
+			new(0.10f, 0.75f, 0.50f), // teal
+			new(0.20f, 0.50f, 1.00f), // blue
+			new(0.60f, 0.25f, 1.00f), // purple
+			new(0.95f, 0.25f, 0.75f), // pink
+			new(1.00f, 1.00f, 1.00f), // white
+			new(0.70f, 0.70f, 0.70f), // light gray
+			new(0.35f, 0.35f, 0.35f), // dark gray
+			new(0.08f, 0.08f, 0.08f), // near black
 		};
 
 
@@ -60,6 +77,9 @@ namespace DLS.Graphics
 			// ---- Chip name UI ----
 			int nameDisplayMode = UI.WheelSelector(ID_NameDisplayOptions, nameDisplayOptions, NextPos(), new Vector2(pw, DrawSettings.ButtonHeight), theme.OptionsWheel, Anchor.TopLeft);
 			ChipSaveMenu.ActiveCustomizeDescription.NameLocation = (NameDisplayLocation)nameDisplayMode;
+
+			// ---- Colour swatches ----
+			DrawColourSwatches(NextPos(), pw);
 
 			// ---- Chip colour UI ----
 			Color newCol = UI.DrawColourPicker(ID_ColourPicker, NextPos(), pw, Anchor.TopLeft);
@@ -177,6 +197,50 @@ namespace DLS.Graphics
 				UI.GetColourPickerState(ID_ColourPicker).SetRGB(col);
 				ChipSaveMenu.ActiveCustomizeDescription.Colour = col;
 			}
+		}
+
+		static void DrawColourSwatches(Vector2 topLeft, float width)
+		{
+			const int cols = 6;
+			const int rows = 2;
+			const float gap = 0.3f;
+			const float swatchH = 1.5f;
+			float swatchW = (width - gap * (cols - 1)) / cols;
+			Vector2 swatchSize = new(swatchW, swatchH);
+
+			for (int row = 0; row < rows; row++)
+			{
+				for (int col = 0; col < cols; col++)
+				{
+					int index = row * cols + col;
+					if (index >= SwatchColors.Length) break;
+
+					Color swatchCol = SwatchColors[index];
+					Vector2 pos = topLeft + new Vector2(col * (swatchW + gap), -row * (swatchH + gap));
+
+					UI.DrawPanel(pos, swatchSize, swatchCol, Anchor.TopLeft);
+					Bounds2D swatchBounds = UI.PrevBounds;
+					bool hover = UI.MouseInsideBounds(swatchBounds);
+
+					if (hover)
+					{
+						UI.DrawLine(swatchBounds.TopLeft, swatchBounds.TopRight, 0.12f, Color.white);
+						UI.DrawLine(swatchBounds.BottomLeft, swatchBounds.TopLeft, 0.12f, Color.white);
+						UI.DrawLine(swatchBounds.TopRight, swatchBounds.BottomRight, 0.12f, Color.white);
+						UI.DrawLine(swatchBounds.BottomLeft, swatchBounds.BottomRight, 0.12f, Color.white);
+
+						if (InputHelper.IsMouseDownThisFrame(MouseButton.Left))
+						{
+							ChipSaveMenu.ActiveCustomizeDescription.Colour = swatchCol;
+							UI.GetColourPickerState(ID_ColourPicker).SetRGB(swatchCol);
+							UpdateChipColHexStringFromColour(swatchCol);
+						}
+					}
+				}
+			}
+
+			float totalH = rows * swatchH + (rows - 1) * gap;
+			UI.OverridePreviousBounds(Bounds2D.CreateFromTopLeftAndSize(topLeft, new Vector2(width, totalH)));
 		}
 
 		static bool ValidateHexStringInput(string text)

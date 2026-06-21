@@ -18,12 +18,35 @@ namespace DLS.CloudSync
 
 		public static bool ShouldRestoreCloudProject(ProjectDescription localProject, ProjectDescription cloudProject, bool localChipDataComplete)
 		{
+			// cloudProject.AllCustomChipNames is already reconciled by SyncProjectChipIndex to
+			// reflect chips that actually exist in the Firestore subcollection.
+			int localDeclared = localProject.AllCustomChipNames?.Length ?? 0;
+			int cloudActual = cloudProject.AllCustomChipNames?.Length ?? 0;
+
 			if (!localChipDataComplete)
 			{
-				return true;
+				// Local is missing files. Only restore if cloud has at least as many chips
+				// as local declares, so an incomplete cloud bundle never overwrites more
+				// complete local data.
+				bool restore = cloudActual >= localDeclared;
+				CloudSyncDiagnostics.Log($"ShouldRestore [{localProject.ProjectName}]: localChipDataIncomplete → localDeclared={localDeclared} cloudActual={cloudActual} → restore={restore}");
+				return restore;
 			}
 
-			return cloudProject.LastSaveTime > localProject.LastSaveTime;
+			// Local is complete. Cloud timestamp is the primary signal, but guard against
+			// a cloud copy that suddenly lost more than half its chips (likely corruption
+			// from an interrupted sync, not a deliberate user deletion of every chip).
+			// Integer division: cloudActual must be < localDeclared/2 to trip the guard,
+			// so deleting up to half the chips on another device is still respected.
+			if (localDeclared >= 2 && cloudActual < localDeclared / 2)
+			{
+				CloudSyncDiagnostics.Log($"ShouldRestore [{localProject.ProjectName}]: localComplete but cloud suspiciously empty → localDeclared={localDeclared} cloudActual={cloudActual} → restore=false (guarded)");
+				return false;
+			}
+
+			bool result = cloudProject.LastSaveTime > localProject.LastSaveTime;
+			CloudSyncDiagnostics.Log($"ShouldRestore [{localProject.ProjectName}]: localComplete → cloudTime={cloudProject.LastSaveTime:yyyy-MM-dd HH:mm:ss} localTime={localProject.LastSaveTime:yyyy-MM-dd HH:mm:ss} cloudActual={cloudActual} localDeclared={localDeclared} → restore={result}");
+			return result;
 		}
 
 		public static AppUserRole ResolveSuggestedRole(string email, IEnumerable<string> teacherEmailAllowlist)
@@ -93,11 +116,11 @@ namespace DLS.CloudSync
 			return -1;
 		}
 
-		public static bool HasRequiredStudentMetadata(string studentName, string registrationNumber, string teacherName)
+		public static bool HasRequiredStudentMetadata(string studentName, string registrationNumber, string teacherName, string turmaId = "")
 		{
 			return !string.IsNullOrWhiteSpace(studentName)
 				&& !string.IsNullOrWhiteSpace(registrationNumber)
-				&& TryNormalizeTeacherName(teacherName, out _);
+				&& (!string.IsNullOrWhiteSpace(turmaId) || TryNormalizeTeacherName(teacherName, out _));
 		}
 
 		public static AppUserRole ParseRole(string persistedRole)

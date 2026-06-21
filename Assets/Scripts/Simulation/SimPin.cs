@@ -10,6 +10,8 @@ namespace DLS.Simulation
 		public uint State;
 
 		public SimPin[] ConnectedTargetPins = Array.Empty<SimPin>();
+		public uint BufferedOutputStateForPropagation;
+		public bool hasBufferedOutputState;
 
 		// Simulation frame index on which pin last received an input
 		public int lastUpdatedFrameIndex;
@@ -32,6 +34,8 @@ namespace DLS.Simulation
 			latestSourceParentChipID = -1;
 
 			PinState.SetAllDisconnected(ref State);
+			BufferedOutputStateForPropagation = State;
+			hasBufferedOutputState = true;
 		}
 
 		public bool FirstBitHigh => PinState.FirstBitHigh(State);
@@ -41,12 +45,30 @@ namespace DLS.Simulation
 			int length = ConnectedTargetPins.Length;
 			for (int i = 0; i < length; i++)
 			{
-				ConnectedTargetPins[i].ReceiveInput(this);
+				ConnectedTargetPins[i].ReceiveInput(this, State);
 			}
 		}
 
+		public void PropagateSignalDelayedByOneTick()
+		{
+			if (!hasBufferedOutputState)
+			{
+				BufferedOutputStateForPropagation = State;
+				hasBufferedOutputState = true;
+			}
+
+			uint stateToPropagate = BufferedOutputStateForPropagation;
+			int length = ConnectedTargetPins.Length;
+			for (int i = 0; i < length; i++)
+			{
+				ConnectedTargetPins[i].ReceiveInput(this, stateToPropagate);
+			}
+
+			BufferedOutputStateForPropagation = State;
+		}
+
 		// Called on sub-chip input pins, or chip dev-pins
-		void ReceiveInput(SimPin source)
+		void ReceiveInput(SimPin source, uint sourceState)
 		{
 			// If this is the first input of the frame, reset the received inputs counter to zero
 			if (lastUpdatedFrameIndex != Simulator.simulationFrame)
@@ -63,8 +85,8 @@ namespace DLS.Simulation
 				// Note: for multi-bit pins, this choice is made identically for all bits, rather than individually.
 				// Todo: maybe consider changing to per-bit in the future...)
 
-				uint OR = source.State | State;
-				uint AND = source.State & State;
+				uint OR = sourceState | State;
+				uint AND = sourceState & State;
 				ushort bitsNew = (ushort)(Simulator.RandomBool() ? OR : AND); // randomly accept or reject conflicting state
 
 				ushort mask = (ushort)(OR >> 16); // tristate flags
@@ -78,7 +100,7 @@ namespace DLS.Simulation
 			else
 			{
 				// First input source this frame, so accept it.
-				State = source.State;
+				State = sourceState;
 				set = true;
 			}
 

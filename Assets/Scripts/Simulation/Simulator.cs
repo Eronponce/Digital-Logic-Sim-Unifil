@@ -79,12 +79,12 @@ namespace DLS.Simulation
 			// Process
 			if (needsOrderPass)
 			{
-				StepChipReorder(rootSimChip);
+				StepChipReorder(rootSimChip, delayByOneTickPerInstance: true);
 				needsOrderPass = false;
 			}
 			else
 			{
-				StepChip(rootSimChip);
+				StepChip(rootSimChip, delayByOneTickPerInstance: true);
 			}
 
 			UpdateAudioState();
@@ -109,7 +109,7 @@ namespace DLS.Simulation
 		}
 
 		// Recursively propagate signals through this chip and its subchips
-		static void StepChip(SimChip chip)
+		static void StepChip(SimChip chip, bool delayByOneTickPerInstance)
 		{
 			// Propagate signal from all input dev-pins to all their connected pins
 			chip.Sim_PropagateInputs();
@@ -134,17 +134,17 @@ namespace DLS.Simulation
 				}
 
 				if (nextSubChip.IsBuiltin) ProcessBuiltinChip(nextSubChip); // We've reached a built-in chip, so process it directly
-				else StepChip(nextSubChip); // Recursively process custom chip
+				else StepChip(nextSubChip, delayByOneTickPerInstance: false); // Custom chips behave as single delayed instances at their parent boundary
 
 				// Step 3) Forward the outputs of the processed subchip to connected pins
-				nextSubChip.Sim_PropagateOutputs();
+				nextSubChip.Sim_PropagateOutputs(delayByOneTickPerInstance);
 			}
 		}
 
 		// Recursively propagate signals through this chip and its subchips
 		// In the process, reorder all subchips based on order in which they become ready for processing (have received all their inputs)
 		// Note: the order here is reversed, so those ready first will be at the end of the array
-		static void StepChipReorder(SimChip chip)
+		static void StepChipReorder(SimChip chip, bool delayByOneTickPerInstance)
 		{
 			chip.Sim_PropagateInputs();
 
@@ -163,11 +163,11 @@ namespace DLS.Simulation
 				numRemaining--;
 
 				// Process chosen subchip
-				if (nextSubChip.ChipType == ChipType.Custom) StepChipReorder(nextSubChip); // Recursively process custom chip
+				if (nextSubChip.ChipType == ChipType.Custom) StepChipReorder(nextSubChip, delayByOneTickPerInstance: false); // Custom chips behave as single delayed instances at their parent boundary
 				else ProcessBuiltinChip(nextSubChip); // We've reached a built-in chip, so process it directly 
 
 				// Step 3) Forward the outputs of the processed subchip to connected pins
-				nextSubChip.Sim_PropagateOutputs();
+				nextSubChip.Sim_PropagateOutputs(delayByOneTickPerInstance);
 			}
 		}
 

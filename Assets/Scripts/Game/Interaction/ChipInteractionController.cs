@@ -15,6 +15,9 @@ namespace DLS.Game
 		// ---- Selection and placement state ----
 		public readonly List<IMoveable> SelectedElements = new();
 		public List<WireInstance> DuplicatedWires = new();
+		readonly List<IMoveable> clipboardElements = new();
+		float lastLeftClickTime = -1f;
+		IMoveable lastLeftClickTarget;
 		public WireInstance WireToPlace;
 		bool isPlacingNewElements;
 		float itemPlacementCurrVerticalSpacing;
@@ -129,6 +132,7 @@ namespace DLS.Game
 			{
 				if (element is SubChipInstance subChip) ActiveDevChip.DeleteSubChip(subChip);
 				else if (element is DevPinInstance devPin) ActiveDevChip.DeleteDevPin(devPin);
+				else if (element is AnnotationInstance annotation) ActiveDevChip.DeleteAnnotation(annotation);
 			}
 
 			if (clearSelection) SelectedElements.Clear();
@@ -199,6 +203,24 @@ namespace DLS.Game
 			}
 
 
+			if (KeyboardShortcuts.CopyShortcutTriggered)
+			{
+				if (SelectedElements.Count > 0 && !IsPlacingOrMovingElementOrCreatingWire)
+				{
+					clipboardElements.Clear();
+					clipboardElements.AddRange(SelectedElements);
+				}
+			}
+
+			if (KeyboardShortcuts.PasteShortcutTriggered)
+			{
+				if (clipboardElements.Count > 0 && !IsPlacingOrMovingElementOrCreatingWire)
+				{
+					CancelEverything();
+					DuplicateElements(clipboardElements);
+				}
+			}
+
 			if (KeyboardShortcuts.DuplicateShortcutTriggered)
 			{
 				if (SelectedElements.Count > 0 && !IsPlacingOrMovingElementOrCreatingWire)
@@ -232,6 +254,28 @@ namespace DLS.Game
 			{
 				CancelEverything();
 			}
+
+			if (InputHelper.IsKeyDownThisFrame(KeyCode.A) && InputHelper.CtrlIsHeld && !InputHelper.AltIsHeld && !InputHelper.ShiftIsHeld
+				&& !IsPlacingOrMovingElementOrCreatingWire && Project.ActiveProject.CanEditViewedChip)
+			{
+				CreateAnnotationAtMouse();
+			}
+		}
+
+		void CreateAnnotationAtMouse()
+		{
+			CancelEverything();
+			int id = IDGenerator.GenerateNewElementID(ActiveDevChip);
+			AnnotationDescription desc = new()
+			{
+				ID = id,
+				Text = "",
+				Position = InputHelper.MousePosWorld
+			};
+			AnnotationInstance annotation = new(desc);
+			ActiveDevChip.AddAnnotation(annotation);
+			Select(annotation, false);
+			AnnotationEditMenu.Open(annotation);
 		}
 
 		void HandleMouseInput()
@@ -310,7 +354,8 @@ namespace DLS.Game
 		void DuplicateElements(List<IMoveable> elements)
 		{
 			if (elements.Count == 0) return;
-			IMoveable[] elementsToDuplicate = elements.Concat(GetNonIncludedLinkedBusElements(elements)).ToArray();
+			IMoveable[] elementsToDuplicate = elements.Concat(GetNonIncludedLinkedBusElements(elements))
+				.Where(e => e is not AnnotationInstance).ToArray();
 
 			List<IMoveable> duplicatedElements = new(elementsToDuplicate.Length);
 			Dictionary<int, int> duplicatedElementIDFromOriginalID = new();
@@ -374,6 +419,11 @@ namespace DLS.Game
 					}
 
 					WireInstance duplicatedWire = new(sourceConnectionInfo, targetConnectionInfo, wirePoints, ActiveDevChip.Wires.Count + DuplicatedWires.Count);
+					duplicatedWire.HasCustomColour = wire.HasCustomColour;
+					duplicatedWire.CustomColour = wire.CustomColour;
+					duplicatedWire.Pattern = wire.Pattern;
+					duplicatedWire.Label = wire.Label;
+					duplicatedWire.LabelT = wire.LabelT;
 					duplicatedWireFromOriginal.Add(wire, duplicatedWire);
 					DuplicatedWires.Add(duplicatedWire);
 				}
@@ -504,6 +554,25 @@ namespace DLS.Game
 				// Mouse down on selectable element: select it and prepare to start moving current selection
 				else if (InteractionState.ElementUnderMouse is IMoveable element)
 				{
+					// Double-click on annotation → edit
+					if (element is AnnotationInstance ann && HasControl)
+					{
+						float now = UnityEngine.Time.realtimeSinceStartup;
+						if (lastLeftClickTarget == element && now - lastLeftClickTime < 0.35f)
+						{
+							lastLeftClickTime = -1f;
+							lastLeftClickTarget = null;
+							AnnotationEditMenu.Open(ann);
+							return;
+						}
+						lastLeftClickTime = now;
+						lastLeftClickTarget = element;
+					}
+					else
+					{
+						lastLeftClickTarget = null;
+					}
+
 					bool addToSelection = KeyboardShortcuts.MultiModeHeld;
 					Select(element, addToSelection);
 					StartMovingSelectedItems();
@@ -839,6 +908,22 @@ namespace DLS.Game
 			void CompleteConnection(WireInstance.ConnectionInfo info)
 			{
 				WireToPlace.FinishPlacingWire(info);
+
+				// Apply saved pin style to new wire
+				PinInstance srcPin = WireToPlace.SourcePin;
+				if (srcPin != null)
+				{
+					if (srcPin.HasInheritedWireColour)
+					{
+						WireToPlace.HasCustomColour = true;
+						WireToPlace.CustomColour = srcPin.InheritedWireColour;
+					}
+					if (srcPin.InheritedWirePattern != WirePattern.None)
+					{
+						WireToPlace.Pattern = srcPin.InheritedWirePattern;
+					}
+				}
+
 				ActiveDevChip.AddWire(WireToPlace, false);
 				ActiveDevChip.UndoController.RecordAddWire(WireToPlace);
 			}
@@ -956,7 +1041,7 @@ namespace DLS.Game
 
 			else // SubChip
 			{
-				SubChipDescription subChipDesc = DescriptionCreator.CreateBuiltinSubChipDescriptionForPlacement(chipDescription.ChipType, chipDescription.Name, instanceID, Vector2.zero);
+				SubChipDescription subChipDesc = DescriptionCreator.CreateSubChipDescriptionForPlacement(chipDescription, instanceID, Vector2.zero);
 				elementToPlace = new SubChipInstance(chipDescription, subChipDesc);
 			}
 

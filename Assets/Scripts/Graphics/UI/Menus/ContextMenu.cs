@@ -24,10 +24,7 @@ namespace DLS.Graphics
 		static bool wasMouseOverMenu;
 		static string contextMenuHeader;
 
-		static readonly MenuEntry[] pinColEntries = ((PinColour[])Enum.GetValues(typeof(PinColour))).Select(col =>
-			new MenuEntry(Format(Enum.GetName(typeof(PinColour), col)), () => SetCol(col), CanSetCol)
-		).ToArray();
-
+		static readonly MenuEntry pinColourEntry = new(Format("COLOR"), OpenPinColourPopup, CanSetCol);
 
 		static readonly MenuEntry deleteEntry = new(Format("DELETE"), Delete, CanDelete);
 		static readonly MenuEntry openChipEntry = new(Format("OPEN"), OpenChip, CanOpenChip);
@@ -47,7 +44,7 @@ namespace DLS.Graphics
 			deleteEntry
 		};
 
-		static readonly MenuEntry[] entries_builtinLED = entries_builtinSubchip.Concat(new[] { dividerMenuEntry }).Concat(pinColEntries).ToArray();
+		static readonly MenuEntry[] entries_builtinLED = entries_builtinSubchip.Concat(new[] { dividerMenuEntry, pinColourEntry }).ToArray();
 
 		static readonly MenuEntry[] entries_builtinBus =
 		{
@@ -78,24 +75,35 @@ namespace DLS.Graphics
 		};
 
 
-		static readonly MenuEntry[] entries_subChipOutput = pinColEntries;
+		static readonly MenuEntry[] entries_subChipOutput =
+		{
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire)
+		};
 
-		static readonly MenuEntry[] entries_inputDevPin = new[]
+		static readonly MenuEntry[] entries_inputDevPin =
 		{
 			new(Format("EDIT"), OpenPinEditMenu, CanEditCurrentChip),
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire),
 			new(Format("DELETE"), Delete, CanDelete),
-			dividerMenuEntry
-		}.Concat(pinColEntries).ToArray();
+		};
 
 		static readonly MenuEntry[] entries_outputDevPin =
 		{
-			entries_inputDevPin[0],
-			entries_inputDevPin[1]
+			new(Format("EDIT"), OpenPinEditMenu, CanEditCurrentChip),
+			new(Format("COLOR"), OpenWireStyleMenu, CanEditWire),
+			new(Format("DELETE"), Delete, CanDelete),
 		};
 
 		static readonly MenuEntry[] entries_wire =
 		{
 			new(Format("EDIT"), EditWire, CanEditWire),
+			new(Format("LABEL"), OpenWireLabelPopup, CanEditWire),
+			new(Format("DELETE"), Delete, CanDelete)
+		};
+
+		static readonly MenuEntry[] entries_annotation =
+		{
+			new(Format("EDIT"), OpenAnnotationEditMenu, CanEditCurrentChip),
 			new(Format("DELETE"), Delete, CanDelete)
 		};
 
@@ -159,8 +167,9 @@ namespace DLS.Graphics
 				bool openDevPinContextMenu = (hoverElement is PinInstance pin && pin.parent is DevPinInstance) || hoverElement is DevPinInstance;
 				bool openWireContextMenu = hoverElement is WireInstance;
 				bool openSubchipOutputPinContextMenu = hoverElement is PinInstance pin2 && pin2.parent is SubChipInstance && pin2.IsSourcePin && !pin2.IsBusPin;
+				bool openAnnotationContextMenu = hoverElement is AnnotationInstance;
 
-				if (openSubChipContextMenu || openDevPinContextMenu || openWireContextMenu || openSubchipOutputPinContextMenu)
+				if (openSubChipContextMenu || openDevPinContextMenu || openWireContextMenu || openSubchipOutputPinContextMenu || openAnnotationContextMenu)
 				{
 					interactionContextName = string.Empty;
 					interactionContext = hoverElement;
@@ -212,6 +221,11 @@ namespace DLS.Graphics
 						PinInstance pinContext = (PinInstance)interactionContext;
 						headerName = CreatePinHeaderName(pinContext.Name);
 						activeContextMenuEntries = entries_subChipOutput;
+					}
+					else if (openAnnotationContextMenu)
+					{
+						headerName = "NOTE";
+						activeContextMenuEntries = entries_annotation;
 					}
 
 					SetContextMenuOpen(headerName);
@@ -344,7 +358,7 @@ namespace DLS.Graphics
 		static bool CanSetCol()
 		{
 			if (!Project.ActiveProject.CanEditViewedChip || UIDrawer.ActiveMenu == UIDrawer.MenuType.ChipCustomization) return false;
-			if (interactionContext is PinInstance pin) return pin.IsSourcePin;
+			if (interactionContext is PinInstance pin) return pin.IsSourcePin || pin.parent is DevPinInstance;
 			if (interactionContext is SubChipInstance subchip) return subchip.ChipType == ChipType.DisplayLED;
 
 			return false;
@@ -355,7 +369,9 @@ namespace DLS.Graphics
 			((SubChipInstance)interactionContext).FlipBus();
 		}
 
-		static void SetCol(PinColour col)
+		static void SetCol(PinColour col) => ApplyPinColour(col);
+
+		public static void ApplyPinColour(PinColour col)
 		{
 			if (interactionContext is PinInstance pin)
 			{
@@ -365,12 +381,37 @@ namespace DLS.Graphics
 			{
 				Project.ActiveProject.NotifyLEDColourChanged(subchip, (uint)col);
 			}
-			
+		}
+
+		public static PinColour GetCurrentPinColour()
+		{
+			if (interactionContext is PinInstance pin) return pin.Colour;
+			return PinColour.Red;
+		}
+
+		static void OpenPinColourPopup()
+		{
+			UIDrawer.SetActiveMenu(UIDrawer.MenuType.PinColourPopup);
 		}
 
 		static void OpenChipLabelPopup()
 		{
 			UIDrawer.SetActiveMenu(UIDrawer.MenuType.ChipLabelPopup);
+		}
+
+		static void OpenWireLabelPopup()
+		{
+			UIDrawer.SetActiveMenu(UIDrawer.MenuType.WireLabelEdit);
+		}
+
+		static void OpenWireStyleMenu()
+		{
+			UIDrawer.SetActiveMenu(UIDrawer.MenuType.WireStyleEdit);
+		}
+
+		static void OpenAnnotationEditMenu()
+		{
+			AnnotationEditMenu.Open((AnnotationInstance)interactionContext);
 		}
 
 		public static void EditWire()

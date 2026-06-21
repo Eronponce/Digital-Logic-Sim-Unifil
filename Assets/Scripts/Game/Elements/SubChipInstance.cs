@@ -46,6 +46,7 @@ namespace DLS.Game
 			OutputPins = CreatePinInstances(description.OutputPins, false);
 			AllPins = InputPins.Concat(OutputPins).ToArray();
 			LoadOutputPinColours(subChipDesc.OutputPinColourInfo);
+			InitOutputPinInheritedWireStyles(description);
 
 			// Displays
 			Displays = CreateDisplayInstances(description);
@@ -89,6 +90,25 @@ namespace DLS.Game
 				CalculatePinLayout(pins);
 
 				return pins;
+			}
+		}
+
+		void InitOutputPinInheritedWireStyles(ChipDescription desc)
+		{
+			if (desc.Wires == null) return;
+			for (int i = 0; i < desc.OutputPins.Length && i < OutputPins.Length; i++)
+			{
+				int devPinID = desc.OutputPins[i].ID;
+				foreach (WireDescription wd in desc.Wires)
+				{
+					if (wd.TargetPinAddress.PinOwnerID == devPinID && wd.TargetPinAddress.PinID == 0)
+					{
+						OutputPins[i].HasInheritedWireColour = wd.HasCustomColour;
+						OutputPins[i].InheritedWireColour = wd.CustomColour;
+						OutputPins[i].InheritedWirePattern = wd.Pattern;
+						break;
+					}
+				}
 			}
 		}
 

@@ -28,15 +28,17 @@ namespace DLS.Graphics
 			$"FIND CHIP    {shortcutTextCol}Ctrl+F",
 			$"LIBRARY      {shortcutTextCol}Ctrl+L",
 			$"PREFS        {shortcutTextCol}Ctrl+P",
+			$"HOTKEYS          {shortcutTextCol}F1",
 			$"QUIT         {shortcutTextCol}Ctrl+Q"
 		};
 
-		const int NewChipButtonIndex = 0;
+		const int NewChipButtonIndex  = 0;
 		const int SaveChipButtonIndex = 1;
 		const int FindChipButtonIndex = 2;
-		const int LibraryButtonIndex = 3;
-		const int OptionsButtonIndex = 4;
-		const int QuitButtonIndex = 5;
+		const int LibraryButtonIndex  = 3;
+		const int OptionsButtonIndex  = 4;
+		const int HotkeyButtonIndex   = 5;
+		const int QuitButtonIndex     = 6;
 
 		// ---- State ----
 		static float scrollX;
@@ -94,7 +96,7 @@ namespace DLS.Graphics
 			{
 				for (int i = menuButtonNames.Length - 1; i >= 0; i--)
 				{
-					bool buttonEnabled = MenuButtonsAndShortcutsEnabled || i is QuitButtonIndex or OptionsButtonIndex;
+					bool buttonEnabled = MenuButtonsAndShortcutsEnabled || i is QuitButtonIndex or OptionsButtonIndex or HotkeyButtonIndex;
 					string text = menuButtonNames[i];
 					if (UI.Button(text, theme, pos, size, buttonEnabled, false, false, Anchor.BottomLeft))
 					{
@@ -129,6 +131,7 @@ namespace DLS.Graphics
 				else if (i == FindChipButtonIndex) OpenSearchMenu();
 				else if (i == LibraryButtonIndex) OpenLibraryMenu();
 				else if (i == OptionsButtonIndex) OpenPreferencesMenu();
+				else if (i == HotkeyButtonIndex) UIDrawer.SetActiveMenu(UIDrawer.MenuType.HotkeyGuide);
 				else if (i == QuitButtonIndex) ExitToMainMenu();
 			}
 		}
@@ -523,6 +526,7 @@ namespace DLS.Graphics
 
 			if (KeyboardShortcuts.PreferencesShortcutTriggered) OpenPreferencesMenu();
 			if (KeyboardShortcuts.QuitToMainMenuShortcutTriggered) ExitToMainMenu();
+			if (KeyboardShortcuts.HotkeyGuideShortcutTriggered) UIDrawer.SetActiveMenu(UIDrawer.MenuType.HotkeyGuide);
 		}
 
 		public static void Reset()

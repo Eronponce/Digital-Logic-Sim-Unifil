@@ -9,6 +9,8 @@ namespace DLS.Description
 		ToWireTarget // target end of wire connects to another wire (source connects to pin)
 	}
 
+	public enum WirePattern { None, Dashed, Double }
+
 	public struct WireDescription
 	{
 		public PinAddress SourcePinAddress;
@@ -17,5 +19,10 @@ namespace DLS.Description
 		public int ConnectedWireIndex;
 		public int ConnectedWireSegmentIndex;
 		public Vector2[] Points;
+		public string Label;
+		public float LabelT;
+		public bool HasCustomColour;
+		public Color CustomColour;
+		public WirePattern Pattern;
 	}
 }

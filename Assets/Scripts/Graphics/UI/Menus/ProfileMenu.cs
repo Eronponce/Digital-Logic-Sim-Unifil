@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using DLS.CloudSync;
 using Seb.Vis;
 using Seb.Vis.UI;
@@ -17,7 +18,11 @@ namespace DLS.Graphics
 		static string registrationNumber = string.Empty;
 		static string newPassword = string.Empty;
 		static string confirmPassword = string.Empty;
-		static int selectedTeacherIndex = -1;
+		static int selectedTurmaIndex = -1;
+		static List<TurmaData> availableTurmas = new();
+		static bool turmasLoading;
+		static bool turmasLoaded;
+		static bool turmasFailed;
 		static string statusMessage = string.Empty;
 		static bool eventsRegistered;
 		static bool isSavingProfile;
@@ -32,7 +37,6 @@ namespace DLS.Graphics
 			CloudUserProfile profile = FirebaseAuthManager.CurrentUserProfile;
 			studentName = profile?.DisplayName ?? string.Empty;
 			registrationNumber = profile?.RegistrationNumber ?? string.Empty;
-			selectedTeacherIndex = CloudSyncPolicy.GetTeacherIndex(profile?.TeacherName ?? string.Empty);
 			newPassword = string.Empty;
 			confirmPassword = string.Empty;
 			statusMessage = string.Empty;
@@ -45,6 +49,16 @@ namespace DLS.Graphics
 			SetInputFieldText(ID_RegistrationInput, registrationNumber);
 			SetInputFieldText(ID_NewPasswordInput, string.Empty);
 			SetInputFieldText(ID_ConfirmPasswordInput, string.Empty);
+
+			if (!turmasLoaded && !turmasLoading && !turmasFailed && FirestoreDataManager.IsReady)
+			{
+				LoadTurmas(profile?.TurmaId ?? string.Empty);
+			}
+			else if (turmasLoaded)
+			{
+				string currentTurmaId = profile?.TurmaId ?? string.Empty;
+				selectedTurmaIndex = availableTurmas.FindIndex(t => t.Id == currentTurmaId);
+			}
 		}
 
 		public static bool DrawProfileScreen()
@@ -53,7 +67,12 @@ namespace DLS.Graphics
 			Vector2 inputSize = new(Mathf.Clamp(UI.Width * 0.58f, 30f, 52f), DrawSettings.ButtonHeight * 1.15f);
 			Vector2 primaryButtonSize = new(Mathf.Clamp(UI.Width * 0.24f, 14f, 22f), DrawSettings.ButtonHeight);
 			float ySpacing = 2.4f;
-			Vector2 pos = UI.Centre + Vector2.up * 17.4f;
+			Vector2 pos = UI.Centre + Vector2.up * 19f;
+
+			if (!turmasLoaded && !turmasLoading && !turmasFailed && FirestoreDataManager.IsReady)
+			{
+				LoadTurmas(FirebaseAuthManager.CurrentUserProfile?.TurmaId ?? string.Empty);
+			}
 
 			UI.DrawText("EDIT PROFILE", theme.FontBold, theme.FontSizeRegular * 1.35f, pos, Anchor.Centre, Color.white);
 			pos.y -= ySpacing * 0.9f;
@@ -64,7 +83,7 @@ namespace DLS.Graphics
 			DrawReadOnlyEmail(ref pos, inputSize, ySpacing, theme);
 			DrawStudentNameField(ref pos, inputSize, ySpacing, theme);
 			DrawRegistrationField(ref pos, inputSize, ySpacing, theme);
-			DrawTeacherSelector(ref pos, inputSize, ySpacing, theme);
+			DrawTurmaSelector(ref pos, inputSize, ySpacing, theme);
 			DrawPasswordField(ref pos, inputSize, ySpacing, theme, "New Password:", ID_NewPasswordInput, ref newPassword);
 			DrawPasswordField(ref pos, inputSize, ySpacing, theme, "Confirm Password:", ID_ConfirmPasswordInput, ref confirmPassword);
 
@@ -128,24 +147,52 @@ namespace DLS.Graphics
 			pos.y -= ySpacing * 1.02f;
 		}
 
-		static void DrawTeacherSelector(ref Vector2 pos, Vector2 inputSize, float ySpacing, DrawSettings.UIThemeDLS theme)
+		static void DrawTurmaSelector(ref Vector2 pos, Vector2 inputSize, float ySpacing, DrawSettings.UIThemeDLS theme)
 		{
 			float halfWidth = inputSize.x * 0.5f;
-			UI.DrawText("Professor:", theme.FontRegular, theme.FontSizeRegular, pos + Vector2.left * halfWidth, Anchor.CentreLeft, Color.white);
+			UI.DrawText("Turma:", theme.FontRegular, theme.FontSizeRegular, pos + Vector2.left * halfWidth, Anchor.CentreLeft, Color.white);
 			pos.y -= ySpacing * 0.6f;
 
-			float buttonWidth = Mathf.Min(10.5f, inputSize.x * 0.32f);
-			float spacing = 1.2f;
-			float totalWidth = buttonWidth * CloudSyncPolicy.SupportedTeacherNames.Count + spacing * (CloudSyncPolicy.SupportedTeacherNames.Count - 1);
+			if (!turmasLoaded)
+			{
+				Color statusCol = turmasLoading ? Color.gray : new Color(1f, 0.7f, 0.3f);
+				string msg = turmasLoading ? "Carregando turmas..." : "Sem turmas.";
+				UI.DrawText(msg, theme.FontRegular, theme.FontSizeRegular * 0.8f, pos, Anchor.Centre, statusCol);
+
+				if (!turmasLoading)
+				{
+					Vector2 reloadBtnPos = pos + Vector2.right * (inputSize.x * 0.3f);
+					if (UI.Button("Carregar", theme.ButtonTheme, reloadBtnPos, new Vector2(12f, DrawSettings.ButtonHeight * 0.8f), true, false, false, Anchor.Centre))
+					{
+						LoadTurmas(FirebaseAuthManager.CurrentUserProfile?.TurmaId ?? string.Empty);
+					}
+				}
+
+				pos.y -= ySpacing * 1.02f;
+				return;
+			}
+
+			if (availableTurmas.Count == 0)
+			{
+				UI.DrawText("Nenhuma turma disponivel.", theme.FontRegular, theme.FontSizeRegular * 0.8f, pos, Anchor.Centre, Color.gray);
+				pos.y -= ySpacing * 1.02f;
+				return;
+			}
+
+			float buttonWidth = Mathf.Min(inputSize.x / availableTurmas.Count - 0.8f, 16f);
+			float spacing = 1.0f;
+			float totalWidth = buttonWidth * availableTurmas.Count + spacing * (availableTurmas.Count - 1);
 			float startX = pos.x - totalWidth * 0.5f + buttonWidth * 0.5f;
 
-			for (int i = 0; i < CloudSyncPolicy.SupportedTeacherNames.Count; i++)
+			for (int i = 0; i < availableTurmas.Count; i++)
 			{
-				ButtonTheme themeToUse = i == selectedTeacherIndex ? theme.ProjectSelectionButtonSelected : theme.ProjectSelectionButton;
+				ButtonTheme btnTheme = i == selectedTurmaIndex
+					? DrawSettings.ActiveUITheme.ProjectSelectionButtonSelected
+					: DrawSettings.ActiveUITheme.ProjectSelectionButton;
 				Vector2 buttonPos = new(startX + i * (buttonWidth + spacing), pos.y);
-				if (UI.Button(CloudSyncPolicy.SupportedTeacherNames[i], themeToUse, buttonPos, new Vector2(buttonWidth, DrawSettings.ButtonHeight * 0.88f), !isSavingProfile, false, false, Anchor.Centre))
+				if (UI.Button(availableTurmas[i].DisplayName, btnTheme, buttonPos, new Vector2(buttonWidth, DrawSettings.ButtonHeight * 0.88f), !isSavingProfile, false, false, Anchor.Centre))
 				{
-					selectedTeacherIndex = i;
+					selectedTurmaIndex = i;
 				}
 			}
 
@@ -175,6 +222,26 @@ namespace DLS.Graphics
 			return inputTheme;
 		}
 
+		static void LoadTurmas(string currentTurmaId)
+		{
+			if (turmasLoading) return;
+			turmasLoading = true;
+			turmasLoaded = false;
+			turmasFailed = false;
+			FirestoreDataManager.LoadTurmas(turmas =>
+			{
+				availableTurmas = turmas ?? new List<TurmaData>();
+				selectedTurmaIndex = availableTurmas.FindIndex(t => t.Id == currentTurmaId);
+				turmasLoading = false;
+				turmasLoaded = true;
+			}, _ =>
+			{
+				turmasLoading = false;
+				turmasLoaded = false;
+				turmasFailed = true;
+			});
+		}
+
 		static bool ValidateInput()
 		{
 			if (string.IsNullOrWhiteSpace(studentName))
@@ -189,9 +256,9 @@ namespace DLS.Graphics
 				return false;
 			}
 
-			if (selectedTeacherIndex < 0 || selectedTeacherIndex >= CloudSyncPolicy.SupportedTeacherNames.Count)
+			if (selectedTurmaIndex < 0 || selectedTurmaIndex >= availableTurmas.Count)
 			{
-				statusMessage = "Error: Select ERON or GUSTAVO";
+				statusMessage = "Error: Selecione sua turma";
 				return false;
 			}
 
@@ -221,6 +288,10 @@ namespace DLS.Graphics
 				return;
 			}
 
+			TurmaData turma = selectedTurmaIndex >= 0 && selectedTurmaIndex < availableTurmas.Count
+				? availableTurmas[selectedTurmaIndex]
+				: null;
+
 			bool shouldUpdatePassword = !string.IsNullOrWhiteSpace(newPassword);
 
 			isSavingProfile = true;
@@ -235,14 +306,14 @@ namespace DLS.Graphics
 				FirebaseAuthManager.UpdatePassword(newPassword);
 			}
 
-			FirebaseAuthManager.UpdateStudentProfile(new CloudStudentProfileData(studentName, registrationNumber, GetSelectedTeacherName()));
-		}
+			CloudStudentProfileData profileData = new(
+				studentName,
+				registrationNumber,
+				turma?.TeacherName ?? string.Empty,
+				turma?.Id ?? string.Empty,
+				turma?.ProjectName ?? string.Empty);
 
-		static string GetSelectedTeacherName()
-		{
-			return selectedTeacherIndex >= 0 && selectedTeacherIndex < CloudSyncPolicy.SupportedTeacherNames.Count
-				? CloudSyncPolicy.SupportedTeacherNames[selectedTeacherIndex]
-				: string.Empty;
+			FirebaseAuthManager.UpdateStudentProfile(profileData);
 		}
 
 		static void RegisterEventsIfNeeded()
@@ -285,6 +356,8 @@ namespace DLS.Graphics
 			saveHasError = false;
 			lastSaveError = string.Empty;
 			statusMessage = string.Empty;
+			turmasLoaded = false;
+			turmasFailed = false;
 			LoadingOverlay.Hide();
 		}
 

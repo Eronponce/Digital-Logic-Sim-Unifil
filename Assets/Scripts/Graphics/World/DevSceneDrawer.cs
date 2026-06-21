@@ -153,6 +153,9 @@ namespace DLS.Graphics
 							DrawSubChip(subchip);
 							break;
 						}
+						case AnnotationInstance annotation:
+							DrawAnnotation(annotation);
+							break;
 					}
 				}
 
@@ -292,8 +295,16 @@ namespace DLS.Graphics
 
 
 			// Draw outline and body
-			Draw.Quad(pos, desc.Size + Vector2.one * ChipOutlineWidth, outlineCol);
-			Draw.Quad(pos, desc.Size, chipCol);
+			bool isGate = GateSymbolDrawer.IsGateChip(subchip);
+			if (isGate)
+			{
+				GateSymbolDrawer.Draw(subchip, chipCol, outlineCol);
+			}
+			else
+			{
+				Draw.Quad(pos, desc.Size + Vector2.one * ChipOutlineWidth, outlineCol);
+				Draw.Quad(pos, desc.Size, chipCol);
+			}
 
 			// Mouse over detection
 			if (InputHelper.MouseInsideBounds_World(pos, desc.Size))
@@ -305,8 +316,8 @@ namespace DLS.Graphics
 				}
 			}
 
-			// Draw name
-			if (isKeyChip || desc.NameLocation != NameDisplayLocation.Hidden)
+			// Draw name (skip for gate symbols — shape communicates the gate type)
+			if (isGate || isKeyChip || desc.NameLocation != NameDisplayLocation.Hidden)
 			{
 				// Display on single line if name fits comfortably, otherwise use 'formatted' version (split across multiple lines)
 				string displayName = isKeyChip ? subchip.activationKeyString : subchip.MultiLineName;
@@ -603,7 +614,8 @@ namespace DLS.Graphics
 			// Toggle state on mouse down
 			bool mouseOverStateIndicator = devPin.PointIsInStateIndicatorBounds(InputHelper.MousePosWorld);
 			bool interactingWithStateDisplay = mouseOverStateIndicator && devPin.IsInputPin && controller.CanInteractWithPinStateDisplay;
-			Color stateCol = devPin.Pin.GetStateCol(0, interactingWithStateDisplay, canEditViewedChip);
+			WireInstance customWire1Bit = GetCustomColorWire(devPin.Pin);
+			Color stateCol = customWire1Bit != null ? customWire1Bit.GetColour(0) : devPin.Pin.GetStateCol(0, interactingWithStateDisplay, canEditViewedChip);
 
 			// Highlight on hover and toggle on mouse down
 			if (interactingWithStateDisplay)
@@ -657,7 +669,8 @@ namespace DLS.Graphics
 					// Highlight on hover, toggle on press
 					bool mouseOverStateToggle = InputHelper.MouseInsideBounds_World(pos, squareDisplaySize);
 					bool isInteractingWithStateDisplay = mouseOverStateToggle && isInteractable;
-					Color stateCol = devPin.Pin.GetStateCol(currBitIndex, isInteractingWithStateDisplay, canEditViewedChip);
+					WireInstance customWireMultiBit = GetCustomColorWire(devPin.Pin);
+					Color stateCol = customWireMultiBit != null ? customWireMultiBit.GetColour(currBitIndex) : devPin.Pin.GetStateCol(currBitIndex, isInteractingWithStateDisplay, canEditViewedChip);
 
 					if (isInteractingWithStateDisplay)
 					{
@@ -679,6 +692,116 @@ namespace DLS.Graphics
 			DrawPinHandle(devPin, devPin.HandlePosition, devPin.GetHandleSize());
 		}
 
+
+		static void DrawAnnotation(AnnotationInstance annotation)
+		{
+			bool isEditing = UIDrawer.ActiveMenu == UIDrawer.MenuType.AnnotationEdit && AnnotationEditMenu.Target == annotation;
+
+			string rawText = annotation.Text;
+			string displayText = rawText == " " ? "" : rawText;
+
+			if (string.IsNullOrEmpty(displayText) && !isEditing) return;
+
+			const float fontSize = DrawSettings.FontSizePinLabel;
+			const FontType font = DrawSettings.FontBold;
+			const float lineSpacing = 1.1f;
+			const float pad = 0.15f;
+
+			string wrapped = string.IsNullOrEmpty(displayText) ? "" : WrapAnnotationText(displayText);
+			Vector2 textSize = string.IsNullOrEmpty(wrapped)
+				? new Vector2(0f, Draw.CalculateTextBoundsSize("M", fontSize, font).y)
+				: Draw.CalculateTextBoundsSize(wrapped, fontSize, font, lineSpacing);
+
+			annotation.ComputedSize = textSize + new Vector2(pad * 2, pad * 2);
+			Vector2 pos = annotation.Position;
+
+			if (!string.IsNullOrEmpty(wrapped))
+			{
+				Draw.Text(font, wrapped, fontSize, pos + new Vector2(0.03f, -0.03f), Anchor.TextFirstLineCentre, new Color(0, 0, 0, 0.5f), lineSpacing);
+				Draw.Text(font, wrapped, fontSize, pos, Anchor.TextFirstLineCentre, Color.white, lineSpacing);
+			}
+
+			if (isEditing && AnnotationEditMenu.CaretVisible)
+			{
+				int ci = Mathf.Clamp(AnnotationEditMenu.CursorIndex, 0, displayText.Length);
+				Vector2 cursorPos = GetAnnotationCursorWorldPos(wrapped, ci, pos, fontSize, font, lineSpacing, textSize.x);
+				float cursorH = fontSize * 0.9f;
+				Draw.Line(cursorPos + Vector2.up * cursorH * 0.5f, cursorPos - Vector2.up * cursorH * 0.5f, 0.07f, Color.white);
+			}
+
+			if (InputHelper.MouseInsideBounds_World(pos, annotation.ComputedSize))
+				InteractionState.NotifyElementUnderMouse(annotation);
+		}
+
+		static Vector2 GetAnnotationCursorWorldPos(string wrappedText, int cursorIndex, Vector2 anchorPos, float fontSize, FontType font, float lineSpacing, float totalWidth)
+		{
+			int lineIndex = 0;
+			int lineStart = 0;
+			for (int i = 0; i < cursorIndex && i < wrappedText.Length; i++)
+			{
+				if (wrappedText[i] == '\n') { lineIndex++; lineStart = i + 1; }
+			}
+
+			int posOnLine = cursorIndex - lineStart;
+			int lineEndIdx = wrappedText.IndexOf('\n', lineStart);
+			string currentLine = lineEndIdx < 0
+				? wrappedText.Substring(lineStart)
+				: wrappedText.Substring(lineStart, lineEndIdx - lineStart);
+			posOnLine = Mathf.Min(posOnLine, currentLine.Length);
+
+			float xOffset = posOnLine > 0
+				? Draw.CalculateTextBoundsSize(currentLine.AsSpan(0, posOnLine), fontSize, font).x
+				: 0f;
+
+			const float lineHeightEM = 1.3f;
+			float lineH = lineHeightEM * lineSpacing * fontSize;
+
+			float cursorX = anchorPos.x - totalWidth * 0.5f + xOffset;
+			float cursorY = anchorPos.y - lineIndex * lineH;
+			return new Vector2(cursorX, cursorY);
+		}
+
+		static string WrapAnnotationText(string text)
+		{
+			const float fontSize = DrawSettings.FontSizePinLabel;
+			const FontType font = DrawSettings.FontBold;
+			const float maxW = AnnotationInstance.MaxWidth;
+
+			if (Draw.CalculateTextBoundsSize(text, fontSize, font).x <= maxW) return text;
+
+			string[] words = text.Split(' ');
+			var sb = new System.Text.StringBuilder();
+			string line = "";
+
+			foreach (string word in words)
+			{
+				string test = line.Length == 0 ? word : line + " " + word;
+				if (Draw.CalculateTextBoundsSize(test, fontSize, font).x > maxW && line.Length > 0)
+				{
+					sb.Append(line).Append('\n');
+					line = word;
+				}
+				else
+				{
+					line = test;
+				}
+			}
+
+			sb.Append(line);
+			return sb.ToString();
+		}
+
+		static WireInstance GetCustomColorWire(PinInstance pin)
+		{
+			foreach (WireInstance w in Project.ActiveProject.ViewedChip.Wires)
+			{
+				if (!w.IsFullyConnected) continue;
+				if (!w.HasCustomColour && !w.SourcePin.HasInheritedWireColour) continue;
+				if (pin.IsSourcePin && PinAddress.Equals(w.SourcePin.Address, pin.Address)) return w;
+				if (!pin.IsSourcePin && PinAddress.Equals(w.TargetPin.Address, pin.Address)) return w;
+			}
+			return null;
+		}
 
 		static void DrawPinHandle(IInteractable item, Vector2 pos, Vector2 size)
 		{
@@ -704,6 +827,115 @@ namespace DLS.Graphics
 			{
 				DrawMultiBitWire(wire);
 			}
+
+			if (!string.IsNullOrEmpty(wire.Label) && wire.IsFullyConnected)
+			{
+				DrawWireLabel(wire);
+			}
+		}
+
+		static WireInstance draggingLabelWire;
+
+		static void DrawWireLabel(WireInstance wire)
+		{
+			Vector2 labelPos = GetWirePointAtT(wire, wire.LabelT);
+			Vector2 size = Draw.CalculateTextBoundsSize(wire.Label, FontSizePinLabel, FontBold) + LabelBackgroundPadding;
+
+			bool mouseOver = !InteractionState.MouseIsOverUI
+				&& Mathf.Abs(InputHelper.MousePosWorld.x - labelPos.x) <= size.x * 0.5f
+				&& Mathf.Abs(InputHelper.MousePosWorld.y - labelPos.y) <= size.y * 0.5f;
+
+			bool isDragging = draggingLabelWire == wire;
+
+			if (!UIDrawer.InInputBlockingMenu())
+			{
+				if (mouseOver && InputHelper.IsMouseDownThisFrame(MouseButton.Left) && !controller.IsPlacingOrMovingElementOrCreatingWire)
+				{
+					draggingLabelWire = wire;
+					isDragging = true;
+					InputHelper.ConsumeMouseButtonDownEvent(MouseButton.Left);
+				}
+
+				if (isDragging)
+				{
+					if (InputHelper.IsMouseHeld(MouseButton.Left))
+					{
+						wire.LabelT = ProjectMouseOntoWireT(wire, InputHelper.MousePosWorld);
+						labelPos = GetWirePointAtT(wire, wire.LabelT);
+						InteractionState.NotifyUnspecifiedElementUnderMouse();
+					}
+					else
+					{
+						draggingLabelWire = null;
+						isDragging = false;
+					}
+				}
+
+				if (mouseOver && !isDragging)
+				{
+					InteractionState.NotifyUnspecifiedElementUnderMouse();
+				}
+			}
+
+			Color bgCol = (mouseOver || isDragging)
+				? Color.Lerp(ActiveTheme.PinLabelCol, Color.white, 0.2f)
+				: ActiveTheme.PinLabelCol;
+
+			Draw.Quad(labelPos, size, bgCol);
+			Draw.Text(FontBold, wire.Label, FontSizePinLabel, labelPos, Anchor.TextFirstLineCentre, Color.white);
+		}
+
+		static Vector2 GetWirePointAtT(WireInstance wire, float t)
+		{
+			float totalLength = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+				totalLength += Vector2.Distance(wire.GetWirePoint(i), wire.GetWirePoint(i + 1));
+
+			if (totalLength == 0) return wire.GetWirePoint(0);
+
+			float target = totalLength * Mathf.Clamp01(t);
+			float accum = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+			{
+				Vector2 a = wire.GetWirePoint(i);
+				Vector2 b = wire.GetWirePoint(i + 1);
+				float segLen = Vector2.Distance(a, b);
+				if (accum + segLen >= target)
+					return Vector2.Lerp(a, b, (target - accum) / segLen);
+				accum += segLen;
+			}
+			return wire.GetWirePoint(wire.WirePointCount - 1);
+		}
+
+		static float ProjectMouseOntoWireT(WireInstance wire, Vector2 mousePos)
+		{
+			float totalLength = 0;
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+				totalLength += Vector2.Distance(wire.GetWirePoint(i), wire.GetWirePoint(i + 1));
+
+			if (totalLength == 0) return 0.5f;
+
+			float bestSqrDst = float.MaxValue;
+			float bestT = wire.LabelT;
+			float accum = 0;
+
+			for (int i = 0; i < wire.WirePointCount - 1; i++)
+			{
+				Vector2 a = wire.GetWirePoint(i);
+				Vector2 b = wire.GetWirePoint(i + 1);
+				float segLen = Vector2.Distance(a, b);
+				Vector2 closest = WireInstance.ClosestPointOnLineSegment(mousePos, a, b);
+				float sqrDst = (mousePos - closest).sqrMagnitude;
+				if (sqrDst < bestSqrDst)
+				{
+					bestSqrDst = sqrDst;
+					float localT = segLen > 0 ? Vector2.Distance(a, closest) / segLen : 0;
+					bestT = (accum + localT * segLen) / totalLength;
+				}
+				accum += segLen;
+			}
+
+			return Mathf.Clamp01(bestT);
 		}
 
 		// Wire should be highlighted if mouse is over it or if in edit mode
@@ -749,7 +981,13 @@ namespace DLS.Graphics
 
 			// Draw
 			Color col = wire.GetColour(0);
-			float interactSqrDst = WireDrawer.DrawWireStraight(wire.BitWires[0].Points, thickness, col, mousePos);
+			WirePattern effectivePattern1Bit = wire.Pattern != WirePattern.None ? wire.Pattern : (wire.SourcePin?.InheritedWirePattern ?? WirePattern.None);
+			float interactSqrDst = effectivePattern1Bit switch
+			{
+				WirePattern.Dashed => WireDrawer.DrawWireDashed(wire.BitWires[0].Points, thickness, col, mousePos),
+				WirePattern.Double => WireDrawer.DrawWireDouble(wire.BitWires[0].Points, thickness, col, mousePos),
+				_ => WireDrawer.DrawWireStraight(wire.BitWires[0].Points, thickness, col, mousePos)
+			};
 
 			// Draw connection point (if connects to wire)
 			if (wire.ConnectedWire != null)
@@ -778,11 +1016,18 @@ namespace DLS.Graphics
 			WireLayoutHelper.CreateMultiBitWireLayout(wire.BitWires, wire, WireThickness);
 
 			// Draw
+			WirePattern inheritedPatternMultiBit = wire.SourcePin?.InheritedWirePattern ?? WirePattern.None;
 			for (int bitIndex = 0; bitIndex < wire.BitWires.Length; bitIndex++)
 			{
 				WireInstance.BitWire bitWire = wire.BitWires[bitIndex];
 				Color col = wire.GetColour(bitIndex);
-				float sqrInteractDst = WireDrawer.DrawWireStraight(bitWire.Points, thickness, col, mousePos);
+				WirePattern effectivePatternMultiBit = wire.Pattern != WirePattern.None ? wire.Pattern : inheritedPatternMultiBit;
+				float sqrInteractDst = effectivePatternMultiBit switch
+				{
+					WirePattern.Dashed => WireDrawer.DrawWireDashed(bitWire.Points, thickness, col, mousePos),
+					WirePattern.Double => WireDrawer.DrawWireDouble(bitWire.Points, thickness, col, mousePos),
+					_ => WireDrawer.DrawWireStraight(bitWire.Points, thickness, col, mousePos)
+				};
 				if (canInteract && sqrInteractDst < sqrDstThreshold) InteractionState.NotifyElementUnderMouse(wire);
 			}
 		}

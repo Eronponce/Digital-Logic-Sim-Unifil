@@ -43,6 +43,7 @@ namespace DLS.SaveSystem
 				OutputPins = outputPins,
 				Wires = chip.Wires.Select(CreateWireDescription).ToArray(),
 				Displays = displays,
+				Annotations = chip.Elements.OfType<AnnotationInstance>().Select(a => a.ToDescription()).ToArray(),
 				ChipType = ChipType.Custom
 			};
 		}
@@ -77,6 +78,23 @@ namespace DLS.SaveSystem
 				position,
 				Array.Empty<OutputPinColourInfo>(),
 				CreateDefaultInstanceData(type)
+			);
+		}
+
+		public static SubChipDescription CreateSubChipDescriptionForPlacement(ChipDescription chipDesc, int id, Vector2 position)
+		{
+			OutputPinColourInfo[] colourInfo = chipDesc.OutputPins?
+				.Select(p => new OutputPinColourInfo(p.Colour, p.ID))
+				.ToArray() ?? Array.Empty<OutputPinColourInfo>();
+
+			return new SubChipDescription
+			(
+				chipDesc.Name,
+				id,
+				string.Empty,
+				position,
+				colourInfo,
+				CreateDefaultInstanceData(chipDesc.ChipType)
 			);
 		}
 
@@ -146,7 +164,12 @@ namespace DLS.SaveSystem
 				ConnectionType = connectionType,
 				ConnectedWireIndex = connectedWireIndex,
 				ConnectedWireSegmentIndex = connectedWireSegmentIndex,
-				Points = wirePoints
+				Points = wirePoints,
+				Label = wire.Label,
+				LabelT = wire.LabelT,
+				HasCustomColour = wire.HasCustomColour,
+				CustomColour = wire.CustomColour,
+				Pattern = wire.Pattern
 			};
 		}
 
@@ -156,8 +179,7 @@ namespace DLS.SaveSystem
 				devPin.ID,
 				devPin.Position,
 				devPin.Pin.bitCount,
-				// Don't save colour info for output pin since it changes based on received input, so would just trigger unecessary 'unsaved changes' warnings
-				devPin.IsInputPin ? devPin.Pin.Colour : default,
+				devPin.Pin.Colour,
 				devPin.pinValueDisplayMode
 			);
 
