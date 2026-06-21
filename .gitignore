@@ -79,6 +79,9 @@ crashlytics-build.properties
 /.idea
 /.vsconfig
 
+# Build logs
+*.log
+
 # Local Firebase config files must stay out of git.
 /google-services.json
 /Assets/StreamingAssets/google-services-desktop.json
