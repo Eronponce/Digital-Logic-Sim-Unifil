@@ -55,12 +55,20 @@ namespace DLS.Graphics
 
 		public static bool NeedsAuthentication()
 		{
+#if DLS_COMMUNITY
+			return false;
+#else
 			return (!FirebaseAuthManager.IsLoggedIn || FirebaseAuthManager.RequiresStudentProfileCompletion) && !wantsOfflineMode;
+#endif
 		}
 
 		public static bool CanProceedToMainMenu()
 		{
+#if DLS_COMMUNITY
+			return true;
+#else
 			return (FirebaseAuthManager.IsLoggedIn && !FirebaseAuthManager.RequiresStudentProfileCompletion) || wantsOfflineMode;
+#endif
 		}
 
 		public static void ReturnToSignIn()

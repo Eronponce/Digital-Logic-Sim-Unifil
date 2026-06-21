@@ -38,6 +38,10 @@ namespace DLS.CloudSync
 
 		void InitializeFirebase()
 		{
+#if DLS_COMMUNITY
+			Log("Community build: Firebase disabled. Running offline.");
+			return;
+#else
 			Log("Initializing Firebase...");
 
 			FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task =>
@@ -59,6 +63,7 @@ namespace DLS.CloudSync
 					OnFirebaseError?.Invoke(error);
 				}
 			});
+#endif
 		}
 
 		void Log(string message)
