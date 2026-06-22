@@ -10,19 +10,20 @@ v2.2.0 is a major feature release built on top of Sebastian Lague's Digital-Logi
 ---
 
 <details>
-<summary><b>Simulation</b></summary>
+<summary><b>What's New</b></summary>
+
+<br>
+
+### Simulation
 
 **One-tick propagation delay per chip instance**
 Each chip instance now introduces exactly one simulation tick of delay, regardless of internal complexity. This makes sequential circuits (shift registers, counters, oscillators) behave predictably and consistently with real hardware propagation delay.
 
 ![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/delay.gif)
 
-</details>
-
 ---
 
-<details>
-<summary><b>Editor — Wires</b></summary>
+### Editor — Wires
 
 **Wire labels**
 Any wire can now carry a text label. Labels are created via the wire context menu and can be dragged freely along the wire to any position. Useful for annotating bus lines, control signals, and clock wires.
@@ -39,12 +40,9 @@ When a wire connects to a subchip output pin that already has a style defined, t
 
 ![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/style2.gif)
 
-</details>
-
 ---
 
-<details>
-<summary><b>Editor — Visuals</b></summary>
+### Editor — Visuals
 
 **IEEE standard gate symbols**
 AND, OR, NOT, NAND, NOR, XOR, and XNOR gates now display their IEEE standard symbols (D-shape body, bubble, etc.) as an alternative to the default rectangular style. Toggle per-chip from the context menu.
@@ -61,24 +59,18 @@ Copying and pasting a selection preserves wire colours, styles, and labels — t
 
 ![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/copy.gif)
 
-</details>
-
 ---
 
-<details>
-<summary><b>Editor — UX</b></summary>
+### Editor — UX
 
 **Hotkey guide (F1)**
 Pressing F1 opens a two-column reference panel listing every keyboard shortcut in the editor. Dismisses with Escape or F1 again.
 
 ![img](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/hotkey.png)
 
-</details>
-
 ---
 
-<details>
-<summary><b>Cloud & Auth (turma variant only)</b></summary>
+### Cloud & Auth (turma variant only)
 
 **Email/password authentication**
 Users log in with an email and password. First-time users can register directly inside the app. Password reset is available from the sign-in screen without leaving the application.
@@ -98,12 +90,9 @@ A checkbox on the sign-in screen persists the session across app restarts.
 **Tab / Enter navigation in login form**
 Tab moves focus from the email field to the password field. Enter while the password field is focused submits the sign-in form.
 
-</details>
-
 ---
 
-<details>
-<summary><b>Credits</b></summary>
+### Credits
 
 This project is a fork of [Sebastian Lague's Digital-Logic-Sim](https://github.com/SebLague/Digital-Logic-Sim) (v2.1.5). All simulator engine work, rendering system, built-in chips, wire editing, undo/redo, bus support, LEDs, ROM, and the overall architecture are Sebastian's work. The features listed in this release are additions made on top of that base.
 
