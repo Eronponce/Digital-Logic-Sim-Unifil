@@ -274,6 +274,7 @@ namespace DLS.Game
 			};
 			AnnotationInstance annotation = new(desc);
 			ActiveDevChip.AddAnnotation(annotation);
+			ActiveDevChip.UndoController.RecordAddElements(new List<IMoveable> { annotation }, false);
 			Select(annotation, false);
 			AnnotationEditMenu.Open(annotation);
 		}

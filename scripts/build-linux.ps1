@@ -36,6 +36,12 @@ if (-not $linuxSupportDir) {
     throw "Linux Build Support is not installed for Unity 6000.0.46f1. Install the LinuxStandaloneSupport module in Unity Hub and run build-linux.bat again."
 }
 
+# Use the Unity exe from the same installation as the Linux support module
+$linuxUnityExe = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $linuxSupportDir))) "Unity.exe"
+if (Test-Path $linuxUnityExe) {
+    $unityExe = $linuxUnityExe
+}
+
 New-Item -ItemType Directory -Force -Path $packagesDir | Out-Null
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 

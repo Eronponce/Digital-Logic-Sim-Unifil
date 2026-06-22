@@ -16,56 +16,56 @@ namespace DLS.Graphics
 		const float SectionPadY = 0.8f;
 		const float EntryPadX   = 1.0f;
 
-		// Section indices: 0=EDITOR, 1=COLOCAÇÃO, 2=CHIP, 3=SIMULAÇÃO
+		// Section indices: 0=EDITOR, 1=PLACEMENT, 2=CHIP, 3=SIMULATION
 		static readonly (string key, string desc)[][] Sections =
 		{
 			// 0 – EDITOR
 			new[]
 			{
-				("Ctrl+C",         "Copiar seleção"),
-				("Ctrl+V",         "Colar"),
-				("Ctrl+Z",         "Desfazer"),
-				("Ctrl+Y/Shift+Z", "Refazer"),
-				("Del/Backspace",  "Deletar"),
-				("Ctrl+G",         "Grade"),
-				("Ctrl+R",         "Câmera"),
-				("Ctrl+A",         "Anotação"),
-				("Alt/Shift+D",    "Duplicar chip"),
+				("Ctrl+C",         "Copy selection"),
+				("Ctrl+V",         "Paste"),
+				("Ctrl+Z",         "Undo"),
+				("Ctrl+Y/Shift+Z", "Redo"),
+				("Del/Backspace",  "Delete"),
+				("Ctrl+G",         "Toggle grid"),
+				("Ctrl+R",         "Reset camera"),
+				("Ctrl+A",         "Add annotation"),
+				("Alt/Shift+D",    "Duplicate chip"),
 			},
-			// 1 – COLOCAÇÃO E CÂMERA
+			// 1 – PLACEMENT & CAMERA
 			new[]
 			{
-				("Esc",   "Cancelar/fechar"),
-				("Enter", "Confirmar"),
-				("Shift", "Linha reta"),
-				("Ctrl",  "Snap grade"),
-				("Alt",   "Pan câmera"),
+				("Esc",   "Cancel / close"),
+				("Enter", "Confirm"),
+				("Shift", "Straight line"),
+				("Ctrl",  "Grid snap"),
+				("Alt",   "Pan camera"),
 			},
 			// 2 – CHIP
 			new[]
 			{
-				("Ctrl+N", "Novo chip"),
-				("Ctrl+S", "Salvar"),
-				("Ctrl+F", "Buscar"),
-				("Ctrl+L", "Biblioteca"),
-				("Ctrl+P", "Preferências"),
-				("Ctrl+Q", "Sair"),
+				("Ctrl+N", "New chip"),
+				("Ctrl+S", "Save"),
+				("Ctrl+F", "Search"),
+				("Ctrl+L", "Library"),
+				("Ctrl+P", "Preferences"),
+				("Ctrl+Q", "Quit"),
 				("F1",     "Hotkeys"),
 			},
-			// 3 – SIMULAÇÃO
+			// 3 – SIMULATION
 			new[]
 			{
-				("Ctrl+Space", "Pausar/retomar"),
-				("Space",      "Avançar passo"),
+				("Ctrl+Space", "Pause / resume"),
+				("Space",      "Step forward"),
 			},
 		};
 
 		static readonly string[] SectionHeaders =
 		{
 			"EDITOR",
-			"COLOCAÇÃO E CÂMERA",
+			"PLACEMENT & CAMERA",
 			"CHIP",
-			"SIMULAÇÃO",
+			"SIMULATION",
 		};
 
 		// Left column: EDITOR + SIMULAÇÃO | Right column: COLOCAÇÃO + CHIP
@@ -114,7 +114,7 @@ namespace DLS.Graphics
 
 				// Close button
 				cursor.y -= SectionPadY * 2f;
-				if (UI.Button("FECHAR", theme.ButtonTheme,
+				if (UI.Button("CLOSE", theme.ButtonTheme,
 					cursor + new Vector2(MenuWidth * 0.5f, 0),
 					new Vector2(14f, DrawSettings.ButtonHeight), true, false, false, Anchor.CentreTop))
 				{

@@ -114,6 +114,7 @@ namespace DLS.Game
 		{
 			List<SubChipInstance> subchips = elements.OfType<SubChipInstance>().ToList();
 			DevPinInstance[] devPins = elements.OfType<DevPinInstance>().ToArray();
+			AnnotationInstance[] annotations = elements.OfType<AnnotationInstance>().ToArray();
 
 			// When deleting elements, store full state of ALL wires, not just those affected by the deletion.
 			// This is because other wires may be connected to the deleted wires (in which case their points are modified),
@@ -137,6 +138,7 @@ namespace DLS.Game
 				subchipDescriptions = subchips.Select(DescriptionCreator.CreateSubChipDescription).ToArray(),
 				pinDescriptions = devPins.Select(DescriptionCreator.CreatePinDescription).ToArray(),
 				pinInInputFlags = devPins.Select(p => p.IsInputPin).ToArray(),
+				annotationDescriptions = annotations.Select(a => a.ToDescription()).ToArray(),
 				wireStateBeforeDelete = wireState,
 				isDeleteAction = delete
 			};
@@ -288,6 +290,7 @@ namespace DLS.Game
 
 			public PinDescription[] pinDescriptions;
 			public bool[] pinInInputFlags;
+			public AnnotationDescription[] annotationDescriptions;
 			public FullWireState wireStateBeforeDelete;
 
 			public bool isDeleteAction;
@@ -330,6 +333,28 @@ namespace DLS.Game
 					else
 					{
 						if (!devChip.TryDeleteDevPinByID(pinDescription.ID)) throw new Exception("Failed to delete dev pin");
+					}
+				}
+
+				// ---- Handle annotations ----
+				for (int i = 0; i < annotationDescriptions.Length; i++)
+				{
+					AnnotationDescription annDesc = annotationDescriptions[i];
+
+					if (addElement)
+					{
+						AnnotationInstance annotation = new(annDesc);
+						devChip.AddAnnotation(annotation);
+						Project.ActiveProject.controller.Select(annotation, true);
+					}
+					else
+					{
+						AnnotationInstance target = null;
+						foreach (IMoveable el in devChip.Elements)
+						{
+							if (el is AnnotationInstance a && a.ID == annDesc.ID) { target = a; break; }
+						}
+						if (target != null) devChip.DeleteAnnotation(target);
 					}
 				}
 
