@@ -101,14 +101,7 @@ namespace DLS.Graphics
 			Bounds2D contentBounds = Bounds2D.CreateFromTopLeftAndSize(topLeft, new Vector2(totalW, contentH));
 			MenuHelper.DrawReservedMenuPanel(panelID, contentBounds);
 
-			// Close on left-click outside the panel
 			Bounds2D panelBounds = Bounds2D.Grow(contentBounds, DrawSettings.PanelUIPadding);
-			if (InputHelper.IsMouseDownThisFrame(MouseButton.Left) && !UI.MouseInsideBounds(panelBounds))
-			{
-				ApplyToAllConnectedWires();
-				UIDrawer.SetActiveMenu(UIDrawer.MenuType.None);
-				return;
-			}
 
 			// ---- Left column: 4×4 hue swatches ----
 			for (int i = 0; i < HueOrder.Length; i++)
@@ -153,7 +146,13 @@ namespace DLS.Graphics
 			// ---- DEFAULT toggle ----
 			Vector2 posDefault = new Vector2(topLeft.x, yDefault);
 			if (UI.Button("DEFAULT", btnTheme, posDefault, new Vector2(totalW, btnH), true, !hasCustomColour, false, Anchor.TopLeft))
+			{
 				hasCustomColour = false;
+				Color pinNaturalCol = DrawSettings.GetStateColour(true, (uint)sourcePin.Colour);
+				customColour = new Color(pinNaturalCol.r, pinNaturalCol.g, pinNaturalCol.b, 1f);
+				opacitySlider.progressT = 1f;
+				UI.GetColourPickerState(ID_ColourPicker).SetRGB(customColour);
+			}
 
 			// ---- Opacity slider ----
 			// DrawSlider ignores anchor and treats pos as centre — pass actual UI-space centre
@@ -177,10 +176,22 @@ namespace DLS.Graphics
 			{
 				ApplyToAllConnectedWires();
 				UIDrawer.SetActiveMenu(UIDrawer.MenuType.None);
+				return;
 			}
 
 			if (KeyboardShortcuts.CancelShortcutTriggered)
+			{
 				UIDrawer.SetActiveMenu(UIDrawer.MenuType.None);
+				return;
+			}
+
+			// Close on left-click outside — checked last so buttons always process first
+			if (InputHelper.IsMouseDownThisFrame(MouseButton.Left) && !UI.MouseInsideBounds(panelBounds))
+			{
+				ApplyToAllConnectedWires();
+				UIDrawer.SetActiveMenu(UIDrawer.MenuType.None);
+				return;
+			}
 
 			ApplyToAllConnectedWires();
 		}
@@ -191,22 +202,29 @@ namespace DLS.Graphics
 		static void ApplyToAllConnectedWires()
 		{
 			float alpha = Mathf.Clamp01(opacitySlider.progressT);
+
+			Color pinNaturalCol = DrawSettings.GetStateColour(true, (uint)sourcePin.Colour);
+			// DEFAULT resets to pin colour (not DLS logic-state green) so the wire
+			// still shows the pin's assigned colour instead of falling through to
+			// GetStateCol() which returns the default logic-state green.
 			Color appliedColour = hasCustomColour
 				? new Color(customColour.r, customColour.g, customColour.b, alpha)
-				: Color.clear;
+				: new Color(pinNaturalCol.r, pinNaturalCol.g, pinNaturalCol.b, 1f);
 
 			foreach (WireInstance w in Project.ActiveProject.ViewedChip.Wires)
 			{
 				if (w.IsFullyConnected && WireMatchesContextPin(w))
 				{
 					w.HasCustomColour = hasCustomColour;
-					w.CustomColour = appliedColour;
+					w.CustomColour = hasCustomColour ? appliedColour : Color.clear;
 					w.Pattern = pattern;
 				}
 			}
 
-			// Persist style on the pin so future wires from this pin inherit it
-			sourcePin.HasInheritedWireColour = hasCustomColour;
+			// Persist style on the pin so future wires from this pin inherit it.
+			// Always keep HasInheritedWireColour = true so the wire uses the pin
+			// colour (not the logic-state fallback) even in DEFAULT mode.
+			sourcePin.HasInheritedWireColour = true;
 			sourcePin.InheritedWireColour = appliedColour;
 			sourcePin.InheritedWirePattern = pattern;
 		}
