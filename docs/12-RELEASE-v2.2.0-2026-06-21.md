@@ -22,7 +22,7 @@ regardless of internal complexity. This makes sequential circuits
 (shift registers, counters, oscillators) behave predictably and
 consistently with real hardware propagation delay.
 
-![gif](delay.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/delay.gif)
 
 ---
 
@@ -33,20 +33,20 @@ Any wire can now carry a text label. Labels are created via the wire
 context menu and can be dragged freely along the wire to any position.
 Useful for annotating bus lines, control signals, and clock wires.
 
-![gif](inputlabel.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/inputlabel.gif)
 
 **Wire style menu**
 Output pins expose a colour and pattern selector (solid, dashed, double).
 The style applies to every wire drawn from that pin, making signal types
 visually distinct at a glance.
 
-![gif](style.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/style.gif)
 
 **Wire style inheritance from subchips**
 When a wire connects to a subchip output pin that already has a style
 defined, the wire inherits that style automatically.
 
-![gif](style2.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/style2.gif)
 
 ---
 
@@ -57,20 +57,20 @@ AND, OR, NOT, NAND, NOR, XOR, and XNOR gates now display their IEEE
 standard symbols (D-shape body, bubble, etc.) as an alternative to the
 default rectangular style. Toggle per-chip from the context menu.
 
-![img](image.png)
+![img](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/image.png)
 
 **Canvas annotations**
 Free-floating text blocks can be placed anywhere on the canvas.
 Double-click to enter inline editing mode. Useful for circuit
 documentation, labels for chip regions, and teaching diagrams.
 
-![gif](notes.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/notes.gif)
 
 **Copy & Paste**
 Copying and pasting a selection preserves wire colours, styles, and
 labels — the pasted circuit looks exactly like the original.
 
-![gif](copy.gif)
+![gif](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/copy.gif)
 
 ---
 
@@ -80,7 +80,7 @@ labels — the pasted circuit looks exactly like the original.
 Pressing F1 opens a two-column reference panel listing every keyboard
 shortcut in the editor. Dismisses with Escape or F1 again.
 
-![img](hotkey.png)
+![img](https://raw.githubusercontent.com/Eronponce/Digital-Logic-Sim-Unifil/main/docs/hotkey.png)
 ---
 
 ### Cloud & Auth (turma variant only)
