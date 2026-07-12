@@ -24,10 +24,14 @@ Fully offline. No login screen, no credentials required. Just download, extract,
 Suitable for anyone who wants to use the simulator without cloud features.
 
 ### Turma (cloud)
-Includes Firebase Authentication (email/password) and Firestore cloud sync.
+Includes email/password authentication and cloud sync of projects/chips.
 Designed for institutions that want students to log in, complete a profile, and have their work saved to the cloud.
 
-To use this variant with your own Firebase project, see [Building from Source](#building-from-source) below.
+> **Backend (2026-07):** o Firebase foi substituído por **Supabase self-hosted**.
+> A autenticação usa Supabase Auth (GoTrue) e os dados são salvos via a API
+> `server-pg` (Postgres). Endpoints em `Assets/Scripts/CloudSync/CloudConfig.cs`
+> (descoberta dinâmica em `MirrorConfigProvider`). Ver `conexao-remota/ARQUITETURA.md`.
+> O SDK do Firebase foi removido do projeto.
 
 ---
 

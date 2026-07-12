@@ -4,15 +4,17 @@ using System.Linq;
 using System.Threading.Tasks;
 using DLS.Description;
 using DLS.SaveSystem;
-using Firebase.Auth;
-using Firebase.Firestore;
 using UnityEngine;
 
 namespace DLS.CloudSync
 {
 	/// <summary>
-	/// Gerenciador de dados Firestore - CRUD de perfil, projetos e chips.
-	/// Estrutura atual:
+	/// Gerenciador de dados na nuvem - CRUD de perfil, projetos e chips.
+	/// Historicamente falava com o Firestore; hoje fala com o mirror server via
+	/// MirrorApiClient (Supabase Auth continua sendo a fonte do token).
+	/// A API pública estática (callbacks onSuccess/onError) foi preservada, então
+	/// os callers (menus, SaverCloudExtension) não mudam.
+	/// Estrutura de dados no servidor (herdada do Firestore):
 	/// users/{userId}
 	/// users/{userId}/projects/{projectName}
 	/// users/{userId}/projects/{projectName}/chips/{chipName}
@@ -20,14 +22,10 @@ namespace DLS.CloudSync
 	public class FirestoreDataManager : MonoBehaviour
 	{
 		public static FirestoreDataManager Instance { get; private set; }
-		public static FirebaseFirestore DB { get; private set; }
-		public static bool IsReady => Instance != null && DB != null;
+		public static bool IsReady => Instance != null;
 
 		[Header("Debug")]
 		[SerializeField] bool showDebugLogs = true;
-
-		[Header("Settings")]
-		[SerializeField] bool enableOfflineCache = true;
 
 		void Awake()
 		{
@@ -43,30 +41,8 @@ namespace DLS.CloudSync
 
 		void Start()
 		{
-			FirebaseManager.OnFirebaseReady += InitializeFirestore;
-
-			if (FirebaseManager.IsInitialized)
-			{
-				InitializeFirestore();
-			}
-		}
-
-		void InitializeFirestore()
-		{
-			if (DB != null)
-			{
-				return;
-			}
-
-			DB = FirebaseFirestore.DefaultInstance;
-
-			if (enableOfflineCache)
-			{
-				DB.Settings.PersistenceEnabled = true;
-				Log("Offline persistence enabled");
-			}
-
-			Log("Firestore initialized");
+			// Pré-aquece a descoberta do endpoint
+			_ = MirrorConfigProvider.GetBaseUrlAsync();
 		}
 
 		public static void SaveProject(ProjectDescription project, Action onSuccess = null, Action<string> onError = null)
@@ -133,7 +109,7 @@ namespace DLS.CloudSync
 		{
 			if (!IsReady)
 			{
-				onError?.Invoke("Firestore not ready");
+				onError?.Invoke("Servidor não está pronto");
 				return;
 			}
 			Instance.LoadTurmasAsync(onSuccess, onError);
@@ -169,7 +145,7 @@ namespace DLS.CloudSync
 			Instance.DeleteAllUserDataAsync(onSuccess, onError);
 		}
 
-		public static void UpsertUserProfile(FirebaseUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData = null, Action<CloudUserProfile> onSuccess = null, Action<string> onError = null)
+		public static void UpsertUserProfile(AuthUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData = null, Action<CloudUserProfile> onSuccess = null, Action<string> onError = null)
 		{
 			if (user == null)
 			{
@@ -220,9 +196,9 @@ namespace DLS.CloudSync
 
 		static bool EnsureReady(Action<string> onError)
 		{
-			if (Instance == null || DB == null)
+			if (!IsReady)
 			{
-				onError?.Invoke("Firestore not ready");
+				onError?.Invoke("Servidor não está pronto");
 				return false;
 			}
 
@@ -233,7 +209,11 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				await SaveProjectDocumentAsync(project, project.AllCustomChipNames?.Length ?? 0);
+				await MirrorApiClient.SaveProjectAsync(
+					FirebaseAuthManager.UserId,
+					project.ProjectName,
+					project.ProjectName,
+					Serializer.SerializeProjectDescription(project));
 				Log($"Project saved: {project.ProjectName}");
 				onSuccess?.Invoke();
 			}
@@ -248,30 +228,14 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				// Atomic write: all chip documents + project document committed together.
-				// If the batch fails, Firestore is left untouched - no orphan chips, no project
-				// doc declaring chips that don't exist.
-				// WriteBatch limit is 500 ops; we cap at 450 to leave headroom and split if needed.
-				WriteBatch batch = DB.StartBatch();
-				int opsInBatch = 0;
-
-				foreach (ChipDescription chip in chips)
-				{
-					DocumentReference chipRef = GetChipDocument(FirebaseAuthManager.UserId, project.ProjectName, chip.Name);
-					batch.Set(chipRef, BuildChipDocumentData(chip, project.ProjectName));
-					opsInBatch++;
-
-					if (opsInBatch >= 450)
-					{
-						await batch.CommitAsync();
-						batch = DB.StartBatch();
-						opsInBatch = 0;
-					}
-				}
-
-				DocumentReference projectRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
-				batch.Set(projectRef, BuildProjectDocumentData(project, chips.Count));
-				await batch.CommitAsync();
+				// Escrita atômica: o servidor grava projeto + chips numa transação Postgres
+				// (o servidor grava numa transação Postgres, sem o limite de 450 ops do Firestore).
+				var chipPayloads = chips.Select(chip => (object)BuildChipPayload(chip)).ToList();
+				await MirrorApiClient.SaveBundleAsync(
+					FirebaseAuthManager.UserId,
+					project.ProjectName,
+					BuildProjectPayload(project),
+					chipPayloads);
 
 				Log($"Project bundle saved (atomic): {project.ProjectName} ({chips.Count} chips)");
 				onSuccess?.Invoke();
@@ -287,7 +251,12 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				await SaveChipDocumentAsync(chip, projectName);
+				await MirrorApiClient.SaveChipAsync(
+					FirebaseAuthManager.UserId,
+					projectName,
+					chip.Name,
+					CloudSyncPolicy.CreateLookupKey(chip.Name),
+					Serializer.SerializeChipDescription(chip));
 				Log($"Chip saved: {chip.Name} (in {projectName})");
 				onSuccess?.Invoke();
 			}
@@ -302,17 +271,17 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				QuerySnapshot snapshot = await GetProjectsCollection(FirebaseAuthManager.UserId).GetSnapshotAsync();
-				List<ProjectDescription> projects = new(snapshot.Count);
+				List<MirrorApiClient.ProjectItem> items = await MirrorApiClient.LoadAllProjectsAsync(FirebaseAuthManager.UserId);
+				List<ProjectDescription> projects = new(items.Count);
 
-				foreach (DocumentSnapshot doc in snapshot.Documents)
+				foreach (MirrorApiClient.ProjectItem item in items)
 				{
-					if (!doc.Exists)
+					if (string.IsNullOrEmpty(item.ProjectData))
 					{
 						continue;
 					}
 
-					projects.Add(DeserializeProject(doc));
+					projects.Add(DeserializeProject(item.ProjectData, item.ProjectName ?? item.Id));
 				}
 
 				projects.Sort((a, b) => b.LastSaveTime.CompareTo(a.LastSaveTime));
@@ -330,18 +299,18 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				QuerySnapshot snapshot = await GetProjectsCollection(FirebaseAuthManager.UserId).GetSnapshotAsync();
-				List<CloudProjectBundle> bundles = new(snapshot.Count);
+				List<MirrorApiClient.BundleItem> items = await MirrorApiClient.LoadAllBundlesAsync(FirebaseAuthManager.UserId);
+				List<CloudProjectBundle> bundles = new(items.Count);
 
-				foreach (DocumentSnapshot doc in snapshot.Documents)
+				foreach (MirrorApiClient.BundleItem item in items)
 				{
-					if (!doc.Exists)
+					if (string.IsNullOrEmpty(item.ProjectData))
 					{
 						continue;
 					}
 
-					ProjectDescription project = DeserializeProject(doc);
-					List<ChipDescription> chips = await LoadChipsForProjectAsync(doc.Reference);
+					ProjectDescription project = DeserializeProject(item.ProjectData, item.ProjectName ?? item.Id);
+					List<ChipDescription> chips = DeserializeChips(item.Chips);
 					bundles.Add(new CloudProjectBundle(project, chips));
 				}
 
@@ -360,7 +329,8 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				List<ChipDescription> chips = await LoadChipsForProjectAsync(GetProjectDocument(FirebaseAuthManager.UserId, projectName));
+				List<MirrorApiClient.ChipItem> items = await MirrorApiClient.LoadChipsAsync(FirebaseAuthManager.UserId, projectName);
+				List<ChipDescription> chips = DeserializeChips(items);
 				Log($"Loaded {chips.Count} chips from '{projectName}'");
 				onSuccess?.Invoke(chips);
 			}
@@ -375,10 +345,8 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				DocumentReference projectDoc = GetProjectDocument(FirebaseAuthManager.UserId, projectName);
-				await DeleteCollectionAsync(projectDoc.Collection("chips"));
-				await projectDoc.DeleteAsync();
-
+				// cascade de chips acontece no servidor, na mesma transação
+				await MirrorApiClient.DeleteProjectAsync(FirebaseAuthManager.UserId, projectName);
 				Log($"Project deleted: {projectName}");
 				onSuccess?.Invoke();
 			}
@@ -393,7 +361,7 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				await GetChipDocument(FirebaseAuthManager.UserId, projectName, chipName).DeleteAsync();
+				await MirrorApiClient.DeleteChipAsync(FirebaseAuthManager.UserId, projectName, chipName);
 				Log($"Chip deleted: {chipName} (from {projectName})");
 				onSuccess?.Invoke();
 			}
@@ -408,16 +376,7 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				string userId = FirebaseAuthManager.UserId;
-				QuerySnapshot projectsSnapshot = await GetProjectsCollection(userId).GetSnapshotAsync();
-
-				foreach (DocumentSnapshot projectDoc in projectsSnapshot.Documents)
-				{
-					await DeleteCollectionAsync(projectDoc.Reference.Collection("chips"));
-					await projectDoc.Reference.DeleteAsync();
-				}
-
-				await GetUserDocument(userId).DeleteAsync();
+				await MirrorApiClient.DeleteAllUserDataAsync(FirebaseAuthManager.UserId);
 				Log("All user data deleted");
 				onSuccess?.Invoke();
 			}
@@ -432,26 +391,23 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				// Guard against race: Firestore.IsReady can flip true before Auth.CurrentUser
-				// is populated. Reading /turmas without auth fails with "Missing or insufficient
-				// permissions" even though rules permit any signed-in user.
+				// Guard: o endpoint de turmas exige usuário autenticado (idToken)
 				if (!FirebaseAuthManager.IsLoggedIn)
 				{
 					onError?.Invoke("Not signed in");
 					return;
 				}
 
-				Query query = DB.Collection("turmas").WhereEqualTo("active", true);
-				QuerySnapshot snapshot = await query.GetSnapshotAsync();
-				List<TurmaData> turmas = new();
-				foreach (DocumentSnapshot doc in snapshot.Documents)
+				List<MirrorApiClient.TurmaItem> items = await MirrorApiClient.LoadTurmasAsync();
+				List<TurmaData> turmas = new(items.Count);
+				foreach (MirrorApiClient.TurmaItem item in items)
 				{
 					turmas.Add(new TurmaData
 					{
-						Id = doc.Id,
-						TeacherName = doc.TryGetValue("teacherName", out string t) ? t : string.Empty,
-						ProjectName = doc.TryGetValue("projectName", out string p) ? p : string.Empty,
-						DisplayName = doc.TryGetValue("displayName", out string d) ? d : string.Empty,
+						Id = item.Id,
+						TeacherName = item.TeacherName ?? string.Empty,
+						ProjectName = item.ProjectName ?? string.Empty,
+						DisplayName = item.DisplayName ?? string.Empty,
 						Active = true
 					});
 				}
@@ -464,33 +420,35 @@ namespace DLS.CloudSync
 			}
 		}
 
-		async void UpsertUserProfileAsync(FirebaseUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData, Action<CloudUserProfile> onSuccess, Action<string> onError)
+		async void UpsertUserProfileAsync(AuthUser user, AppUserRole suggestedRole, CloudStudentProfileData studentProfileData, Action<CloudUserProfile> onSuccess, Action<string> onError)
 		{
 			try
 			{
-				DocumentReference userDoc = GetUserDocument(user.UserId);
-				DocumentSnapshot existingSnapshot = await userDoc.GetSnapshotAsync();
+				// Lê o perfil existente para preservar papel/aprovação e preencher
+				// campos ausentes — mesma lógica do SetOptions.MergeAll de antes.
+				Dictionary<string, object> existing = await MirrorApiClient.GetUserProfileAsync(user.UserId);
+				bool exists = existing != null;
 
 				AppUserRole existingRole = AppUserRole.Student;
 				bool approved = true;
-				if (existingSnapshot.Exists)
+				if (exists)
 				{
-					if (existingSnapshot.TryGetValue("role", out string persistedRole))
+					if (TryGetString(existing, "role", out string persistedRole))
 					{
 						existingRole = CloudSyncPolicy.ParseRole(persistedRole);
 					}
 
-					if (existingSnapshot.TryGetValue("isApproved", out bool persistedApproval))
+					if (existing.TryGetValue("isApproved", out object persistedApproval) && persistedApproval is bool approvedBool)
 					{
-						approved = persistedApproval;
+						approved = approvedBool;
 					}
 				}
 
 				AppUserRole finalRole = CloudSyncPolicy.PreferExistingRole(existingRole, suggestedRole);
-				string existingDisplayName = GetPersistedString(existingSnapshot, "displayName", "studentName");
-				string existingRegistrationNumber = GetPersistedString(existingSnapshot, "registrationNumber", "matricula");
-				string existingTeacherName = GetPersistedString(existingSnapshot, "teacherName", "teacher");
-				string existingTurmaId = GetPersistedString(existingSnapshot, "turmaId");
+				string existingDisplayName = GetPersistedString(existing, "displayName", "studentName");
+				string existingRegistrationNumber = GetPersistedString(existing, "registrationNumber", "matricula");
+				string existingTeacherName = GetPersistedString(existing, "teacherName", "teacher");
+				string existingTurmaId = GetPersistedString(existing, "turmaId");
 				string displayName = ResolveDisplayName(user, studentProfileData, existingDisplayName);
 				string registrationNumber = CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					? ResolveRegistrationNumber(studentProfileData, existingRegistrationNumber)
@@ -507,6 +465,7 @@ namespace DLS.CloudSync
 				bool profileCompleted = !CloudSyncPolicy.RequiresStudentProfile(finalRole)
 					|| CloudSyncPolicy.HasRequiredStudentMetadata(displayName, registrationNumber, teacherName, turmaId);
 
+				long nowMillis = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 				Dictionary<string, object> data = new()
 				{
 					{ "uid", user.UserId },
@@ -524,15 +483,15 @@ namespace DLS.CloudSync
 					{ "role", CloudSyncPolicy.ToPersistedRole(finalRole) },
 					{ "isTeacher", finalRole == AppUserRole.Teacher },
 					{ "isApproved", approved },
-					{ "lastLoginAt", FieldValue.ServerTimestamp }
+					{ "lastLoginAt", nowMillis }
 				};
 
-				if (!existingSnapshot.Exists)
+				if (!exists)
 				{
-					data.Add("createdAt", FieldValue.ServerTimestamp);
+					data.Add("createdAt", nowMillis);
 				}
 
-				await userDoc.SetAsync(data, SetOptions.MergeAll);
+				await MirrorApiClient.UpsertUserProfileAsync(user.UserId, data);
 
 				CloudUserProfile profile = new(user.UserId, user.Email, displayName, finalRole, approved, registrationNumber, teacherName, profileCompleted, turmaId);
 				Log($"User profile synced: {profile.DisplayName} ({profile.RoleLabel})");
@@ -545,100 +504,71 @@ namespace DLS.CloudSync
 			}
 		}
 
-		static Dictionary<string, object> BuildProjectDocumentData(ProjectDescription project, int customChipCount)
+		static Dictionary<string, object> BuildProjectPayload(ProjectDescription project)
 		{
 			return new Dictionary<string, object>
 			{
 				{ "projectName", project.ProjectName },
-				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(project.ProjectName) },
 				{ "projectData", Serializer.SerializeProjectDescription(project) },
-				{ "customChipCount", customChipCount },
-				{ "lastModified", FieldValue.ServerTimestamp }
+				{ "lastModified", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
 			};
 		}
 
-		static Dictionary<string, object> BuildChipDocumentData(ChipDescription chip, string projectName)
+		static Dictionary<string, object> BuildChipPayload(ChipDescription chip)
 		{
 			return new Dictionary<string, object>
 			{
+				{ "chipId", chip.Name },
 				{ "chipName", chip.Name },
 				{ "chipLookupKey", CloudSyncPolicy.CreateLookupKey(chip.Name) },
-				{ "projectLookupKey", CloudSyncPolicy.CreateLookupKey(projectName) },
 				{ "chipData", Serializer.SerializeChipDescription(chip) },
-				{ "lastModified", FieldValue.ServerTimestamp }
+				{ "lastModified", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
 			};
 		}
 
-		async Task SaveProjectDocumentAsync(ProjectDescription project, int customChipCount)
+		static List<ChipDescription> DeserializeChips(List<MirrorApiClient.ChipItem> items)
 		{
-			DocumentReference docRef = GetProjectDocument(FirebaseAuthManager.UserId, project.ProjectName);
-			await docRef.SetAsync(BuildProjectDocumentData(project, customChipCount));
-		}
-
-		async Task SaveChipDocumentAsync(ChipDescription chip, string projectName)
-		{
-			DocumentReference docRef = GetChipDocument(FirebaseAuthManager.UserId, projectName, chip.Name);
-			await docRef.SetAsync(BuildChipDocumentData(chip, projectName));
-		}
-
-		async Task<List<ChipDescription>> LoadChipsForProjectAsync(DocumentReference projectDocument)
-		{
-			QuerySnapshot snapshot = await projectDocument.Collection("chips").GetSnapshotAsync();
-			List<ChipDescription> chips = new(snapshot.Count);
-
-			foreach (DocumentSnapshot doc in snapshot.Documents)
+			List<ChipDescription> chips = new(items?.Count ?? 0);
+			if (items == null)
 			{
-				if (!doc.Exists || !doc.TryGetValue("chipData", out string chipJson))
+				return chips;
+			}
+
+			foreach (MirrorApiClient.ChipItem item in items)
+			{
+				if (string.IsNullOrEmpty(item.ChipData))
 				{
 					continue;
 				}
 
-				chips.Add(Serializer.DeserializeChipDescription(chipJson));
+				chips.Add(Serializer.DeserializeChipDescription(item.ChipData));
 			}
 
 			return chips.OrderBy(chip => chip.Name, ChipDescription.NameComparer).ToList();
 		}
 
-		async Task DeleteCollectionAsync(CollectionReference collection)
+		static bool TryGetString(Dictionary<string, object> data, string key, out string value)
 		{
-			QuerySnapshot snapshot = await collection.GetSnapshotAsync();
-			if (snapshot.Count == 0)
+			value = string.Empty;
+			if (data != null && data.TryGetValue(key, out object raw) && raw is string s && !string.IsNullOrWhiteSpace(s))
 			{
-				return;
+				value = s;
+				return true;
 			}
 
-			WriteBatch batch = DB.StartBatch();
-			int operationsInBatch = 0;
-
-			foreach (DocumentSnapshot doc in snapshot.Documents)
-			{
-				batch.Delete(doc.Reference);
-				operationsInBatch++;
-
-				if (operationsInBatch >= 450)
-				{
-					await batch.CommitAsync();
-					batch = DB.StartBatch();
-					operationsInBatch = 0;
-				}
-			}
-
-			if (operationsInBatch > 0)
-			{
-				await batch.CommitAsync();
-			}
+			return false;
 		}
 
-		static string GetPersistedString(DocumentSnapshot snapshot, params string[] fieldNames)
+		static string GetPersistedString(Dictionary<string, object> data, params string[] fieldNames)
 		{
-			if (snapshot == null || !snapshot.Exists || fieldNames == null)
+			if (data == null || fieldNames == null)
 			{
 				return string.Empty;
 			}
 
 			foreach (string fieldName in fieldNames)
 			{
-				if (!string.IsNullOrWhiteSpace(fieldName) && snapshot.TryGetValue(fieldName, out string value) && !string.IsNullOrWhiteSpace(value))
+				if (!string.IsNullOrWhiteSpace(fieldName) && TryGetString(data, fieldName, out string value))
 				{
 					return value.Trim();
 				}
@@ -647,7 +577,7 @@ namespace DLS.CloudSync
 			return string.Empty;
 		}
 
-		static string ResolveDisplayName(FirebaseUser user, CloudStudentProfileData studentProfileData, string existingDisplayName)
+		static string ResolveDisplayName(AuthUser user, CloudStudentProfileData studentProfileData, string existingDisplayName)
 		{
 			if (!string.IsNullOrWhiteSpace(studentProfileData?.StudentName))
 			{
@@ -687,20 +617,13 @@ namespace DLS.CloudSync
 			return CloudSyncPolicy.NormalizeTeacherNameOrEmpty(existingTeacherName);
 		}
 
-		static CollectionReference GetUsersCollection() => DB.Collection("users");
-		static DocumentReference GetUserDocument(string userId) => GetUsersCollection().Document(userId);
-		static CollectionReference GetProjectsCollection(string userId) => GetUserDocument(userId).Collection("projects");
-		static DocumentReference GetProjectDocument(string userId, string projectName) => GetProjectsCollection(userId).Document(projectName);
-		static DocumentReference GetChipDocument(string userId, string projectName, string chipName) => GetProjectDocument(userId, projectName).Collection("chips").Document(chipName);
-
-		static ProjectDescription DeserializeProject(DocumentSnapshot doc)
+		static ProjectDescription DeserializeProject(string projectJson, string fallbackName)
 		{
-			string projectJson = doc.GetValue<string>("projectData");
 			ProjectDescription project = Serializer.DeserializeProjectDescription(projectJson);
 
-			if (string.IsNullOrWhiteSpace(project.ProjectName) && doc.TryGetValue("projectName", out string projectName))
+			if (string.IsNullOrWhiteSpace(project.ProjectName) && !string.IsNullOrWhiteSpace(fallbackName))
 			{
-				project.ProjectName = projectName;
+				project.ProjectName = fallbackName;
 			}
 
 			return project;
@@ -725,8 +648,6 @@ namespace DLS.CloudSync
 			{
 				Instance = null;
 			}
-
-			FirebaseManager.OnFirebaseReady -= InitializeFirestore;
 		}
 	}
 }

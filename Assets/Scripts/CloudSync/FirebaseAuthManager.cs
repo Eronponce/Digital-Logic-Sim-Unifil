@@ -1,20 +1,20 @@
 using System;
-using System.Collections;
+using System.Threading.Tasks;
 using DLS.SaveSystem;
-using Firebase.Auth;
 using UnityEngine;
 
 namespace DLS.CloudSync
 {
 	/// <summary>
-	/// Gerenciador de autenticação Firebase.
-	/// Nesta fase o login operacional é email/senha, com perfil salvo no Firestore.
+	/// Gerenciador de autenticação. Antes usava Firebase Auth; agora usa o Supabase
+	/// Auth (GoTrue) via SupabaseAuthClient. O nome da classe e a API pública estática
+	/// foram preservados para não quebrar os menus que a consomem.
+	/// Login operacional: email/senha, com perfil salvo no Postgres (via MirrorApiClient).
 	/// </summary>
 	public class FirebaseAuthManager : MonoBehaviour
 	{
 		public static FirebaseAuthManager Instance { get; private set; }
-		public static FirebaseAuth Auth { get; private set; }
-		public static FirebaseUser CurrentUser => Auth?.CurrentUser;
+		public static AuthUser CurrentUser => SupabaseAuthClient.CurrentUser;
 		public static bool IsLoggedIn => CurrentUser != null;
 		public static string UserId => CurrentUser?.UserId;
 		public static string UserEmail => CurrentUser?.Email;
@@ -24,7 +24,7 @@ namespace DLS.CloudSync
 		public static bool RequiresStudentProfileCompletion => IsLoggedIn && CurrentUserProfile.RequiresStudentProfileCompletion;
 		public static string CurrentUserRoleLabel => CurrentUserProfile.RoleLabel;
 
-		public static event Action<FirebaseUser> OnLoginSuccess;
+		public static event Action<AuthUser> OnLoginSuccess;
 		public static event Action<CloudUserProfile> OnUserProfileReady;
 		public static event Action OnLogout;
 		public static event Action<string> OnAuthInfo;
@@ -32,9 +32,6 @@ namespace DLS.CloudSync
 
 		[Header("Debug")]
 		[SerializeField] bool showDebugLogs = true;
-
-		[Header("Session Settings")]
-		[SerializeField] bool persistSession = true;
 
 		[Header("Role Bootstrap")]
 		[SerializeField] string[] teacherEmailAllowlist = Array.Empty<string>();
@@ -47,8 +44,6 @@ namespace DLS.CloudSync
 			set { PlayerPrefs.SetInt(KeepLoggedInKey, value ? 1 : 0); PlayerPrefs.Save(); }
 		}
 
-		string lastProcessedUserId = string.Empty;
-		Coroutine signInBootstrapCoroutine;
 		bool signOutInProgress;
 		CloudStudentProfileData pendingStudentProfileData;
 
@@ -64,126 +59,46 @@ namespace DLS.CloudSync
 			DontDestroyOnLoad(gameObject);
 		}
 
-		void Start()
+		async void Start()
 		{
-			FirebaseManager.OnFirebaseReady += InitializeAuth;
-
-			if (FirebaseManager.IsInitialized)
+			// Em computador compartilhado, só restaura sessão se "manter logado".
+			if (KeepLoggedIn)
 			{
-				InitializeAuth();
-			}
-		}
-
-		void InitializeAuth()
-		{
-			Auth = FirebaseAuth.DefaultInstance;
-			Auth.StateChanged -= OnAuthStateChanged;
-			Auth.StateChanged += OnAuthStateChanged;
-
-			if (CurrentUser != null)
-			{
-				if (KeepLoggedIn)
+				AuthUser restored = await SupabaseAuthClient.TryRestoreSessionAsync();
+				if (restored != null)
 				{
-					Log("KeepLoggedIn active — skipping startup sign-out.");
+					Log($"Sessão restaurada: {restored.Email}");
+					await FinalizeSignIn(restored);
+					return;
 				}
-				else
-				{
-					Log("Forcing sign-out on startup (shared computer safety).");
-					Auth.SignOut();
-				}
-			}
-
-			Log($"Auth initialized. Persist session: {persistSession}");
-			lastProcessedUserId = "__startup_refresh__";
-			HandleCurrentAuthState();
-		}
-
-		void OnAuthStateChanged(object sender, EventArgs args)
-		{
-			HandleCurrentAuthState();
-		}
-
-		void HandleCurrentAuthState()
-		{
-			string currentUserId = CurrentUser?.UserId ?? string.Empty;
-			if (string.Equals(currentUserId, lastProcessedUserId, StringComparison.Ordinal))
-			{
-				return;
-			}
-
-			lastProcessedUserId = currentUserId;
-
-			if (signInBootstrapCoroutine != null)
-			{
-				StopCoroutine(signInBootstrapCoroutine);
-				signInBootstrapCoroutine = null;
-			}
-
-			if (CurrentUser != null)
-			{
-				Log($"User signed in: {CurrentUser.DisplayName ?? CurrentUser.Email}");
-				signInBootstrapCoroutine = StartCoroutine(BootstrapSignedInUser(CurrentUser));
 			}
 			else
 			{
-				signOutInProgress = false;
-				pendingStudentProfileData = null;
-				CurrentUserProfile = CloudUserProfile.Offline;
-				SavePaths.UseOfflineProfile();
-				Log("User signed out");
-				OnLogout?.Invoke();
+				SupabaseAuthClient.SignOut();
 			}
+
+			CurrentUserProfile = CloudUserProfile.Offline;
+			SavePaths.UseOfflineProfile();
 		}
 
-		IEnumerator BootstrapSignedInUser(FirebaseUser user)
-		{
-			const float timeoutSeconds = 5f;
-			float elapsed = 0f;
-
-			while (!FirestoreDataManager.IsReady && elapsed < timeoutSeconds)
-			{
-				if (CurrentUser == null || CurrentUser.UserId != user.UserId)
-				{
-					yield break;
-				}
-
-				elapsed += Time.unscaledDeltaTime;
-				yield return null;
-			}
-
-			signInBootstrapCoroutine = null;
-
-			if (CurrentUser == null || CurrentUser.UserId != user.UserId)
-			{
-				yield break;
-			}
-
-			FinalizeSignIn(user);
-		}
-
-		void FinalizeSignIn(FirebaseUser user)
+		async Task FinalizeSignIn(AuthUser user)
 		{
 			AppUserRole suggestedRole = CloudSyncPolicy.ResolveSuggestedRole(user.Email, teacherEmailAllowlist);
 			CloudStudentProfileData studentProfileData = ConsumePendingStudentProfileData();
 
-			if (!FirestoreDataManager.IsReady)
-			{
-				LogError("Firestore not ready during sign-in bootstrap. Continuing with fallback profile.");
-				CompleteSignIn(user, CreateFallbackProfile(user, suggestedRole, studentProfileData));
-				return;
-			}
-
+			var tcs = new TaskCompletionSource<bool>();
 			FirestoreDataManager.UpsertUserProfile(user, suggestedRole, studentProfileData,
-				onSuccess: profile => CompleteSignIn(user, profile),
+				onSuccess: profile => { CompleteSignIn(user, profile); tcs.TrySetResult(true); },
 				onError: error =>
 				{
-					LogError($"Failed to sync user profile: {error}");
+					LogError($"Falha ao sincronizar perfil: {error}");
 					CompleteSignIn(user, CreateFallbackProfile(user, suggestedRole, studentProfileData));
-				}
-			);
+					tcs.TrySetResult(true);
+				});
+			await tcs.Task;
 		}
 
-		void CompleteSignIn(FirebaseUser user, CloudUserProfile profile)
+		void CompleteSignIn(AuthUser user, CloudUserProfile profile)
 		{
 			ApplyUserProfile(user, profile);
 
@@ -198,7 +113,7 @@ namespace DLS.CloudSync
 			OnLoginSuccess?.Invoke(user);
 		}
 
-		void ApplyUserProfile(FirebaseUser user, CloudUserProfile profile)
+		void ApplyUserProfile(AuthUser user, CloudUserProfile profile)
 		{
 			CurrentUserProfile = profile;
 			SavePaths.UseCloudProfile(user.UserId);
@@ -206,7 +121,7 @@ namespace DLS.CloudSync
 			OnUserProfileReady?.Invoke(profile);
 		}
 
-		CloudUserProfile CreateFallbackProfile(FirebaseUser user, AppUserRole role, CloudStudentProfileData studentProfileData)
+		CloudUserProfile CreateFallbackProfile(AuthUser user, AppUserRole role, CloudStudentProfileData studentProfileData)
 		{
 			string displayName = string.IsNullOrWhiteSpace(studentProfileData?.StudentName)
 				? (string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserId : user.DisplayName)
@@ -239,13 +154,12 @@ namespace DLS.CloudSync
 
 		public static void SignInWithGoogle()
 		{
-			Instance?.Log("Google Sign-In nao implementado nesta fase. Use email/senha para testes.");
-			OnAuthError?.Invoke("Google Sign-In ainda nao foi implementado nesta fase do projeto.");
+			OnAuthError?.Invoke("Login com Google ainda não foi implementado nesta fase do projeto.");
 		}
 
 		public static void SignOut()
 		{
-			if (Auth == null || Instance == null)
+			if (Instance == null)
 			{
 				return;
 			}
@@ -264,7 +178,10 @@ namespace DLS.CloudSync
 			{
 				Instance.Log("Full sync complete. Signing out...");
 				Instance.signOutInProgress = false;
-				Auth.SignOut();
+				SupabaseAuthClient.SignOut();
+				CurrentUserProfile = CloudUserProfile.Offline;
+				SavePaths.UseOfflineProfile();
+				OnLogout?.Invoke();
 			});
 		}
 
@@ -273,25 +190,19 @@ namespace DLS.CloudSync
 			try
 			{
 				Log($"Attempting sign-in with email: {email}");
-
-				if (Auth == null)
-				{
-					OnAuthError?.Invoke("Authentication system not ready. Please wait and try again.");
-					return;
-				}
-
-				await Auth.SignInWithEmailAndPasswordAsync(email, password);
+				AuthUser user = await SupabaseAuthClient.SignInWithPasswordAsync(email, password);
+				await FinalizeSignIn(user);
 			}
-			catch (Firebase.FirebaseException fbEx)
+			catch (AuthException ex)
 			{
-				string friendlyError = GetFriendlyErrorMessage(fbEx);
-				LogError($"Sign in failed: {friendlyError} (Code: {fbEx.ErrorCode})");
-				OnAuthError?.Invoke(friendlyError);
+				string friendly = GetFriendlyErrorMessage(ex);
+				LogError($"Sign in failed: {friendly} (HTTP {ex.StatusCode})");
+				OnAuthError?.Invoke(friendly);
 			}
 			catch (Exception ex)
 			{
-				LogError($"Sign in failed: {ex.Message}\nStack: {ex.StackTrace}");
-				OnAuthError?.Invoke("Sign in failed. Please check your credentials and try again.");
+				LogError($"Sign in failed: {ex.Message}");
+				OnAuthError?.Invoke("Falha no login. Verifique suas credenciais e tente novamente.");
 			}
 		}
 
@@ -321,38 +232,22 @@ namespace DLS.CloudSync
 			{
 				Log($"Creating new account: {email}");
 				pendingStudentProfileData = studentProfileData;
-
-				if (Auth == null)
-				{
-					OnAuthError?.Invoke("Authentication system not ready. Please wait and try again.");
-					pendingStudentProfileData = null;
-					return;
-				}
-
-				AuthResult result = await Auth.CreateUserWithEmailAndPasswordAsync(email, password);
-				FirebaseUser user = result.User;
-
-				if (!string.IsNullOrWhiteSpace(studentProfileData?.StudentName))
-				{
-					UserProfile profile = new() { DisplayName = studentProfileData.StudentName };
-					await user.UpdateUserProfileAsync(profile);
-					await user.ReloadAsync();
-				}
-
+				AuthUser user = await SupabaseAuthClient.SignUpAsync(email, password, studentProfileData?.StudentName);
 				Log($"Account created: {user.Email}");
+				await FinalizeSignIn(user);
 			}
-			catch (Firebase.FirebaseException fbEx)
+			catch (AuthException ex)
 			{
-				string friendlyError = GetFriendlyErrorMessage(fbEx);
-				LogError($"Account creation failed: {friendlyError} (Code: {fbEx.ErrorCode})");
+				string friendly = GetFriendlyErrorMessage(ex);
+				LogError($"Account creation failed: {friendly} (HTTP {ex.StatusCode})");
 				pendingStudentProfileData = null;
-				OnAuthError?.Invoke(friendlyError);
+				OnAuthError?.Invoke(friendly);
 			}
 			catch (Exception ex)
 			{
-				LogError($"Account creation failed: {ex.Message}\nStack: {ex.StackTrace}");
+				LogError($"Account creation failed: {ex.Message}");
 				pendingStudentProfileData = null;
-				OnAuthError?.Invoke("Failed to create account. Please try again.");
+				OnAuthError?.Invoke("Não foi possível criar a conta. Tente novamente.");
 			}
 		}
 
@@ -360,26 +255,14 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				if (Auth == null)
-				{
-					OnAuthError?.Invoke("Authentication system not ready. Please wait and try again.");
-					return;
-				}
-
-				await Auth.SendPasswordResetEmailAsync(email);
+				await SupabaseAuthClient.SendPasswordResetAsync(email);
 				Log($"Password reset email sent: {email}");
-				OnAuthInfo?.Invoke("Password reset email sent. Check your inbox.");
-			}
-			catch (Firebase.FirebaseException fbEx)
-			{
-				string friendlyError = GetFriendlyErrorMessage(fbEx);
-				LogError($"Password reset failed: {friendlyError} (Code: {fbEx.ErrorCode})");
-				OnAuthError?.Invoke(friendlyError);
+				OnAuthInfo?.Invoke("Email de redefinição enviado. Verifique sua caixa de entrada.");
 			}
 			catch (Exception ex)
 			{
-				LogError($"Password reset failed: {ex.Message}\nStack: {ex.StackTrace}");
-				OnAuthError?.Invoke("Failed to send password reset email. Please try again.");
+				LogError($"Password reset failed: {ex.Message}");
+				OnAuthError?.Invoke("Não foi possível enviar o email de redefinição. Tente novamente.");
 			}
 		}
 
@@ -387,32 +270,24 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				if (Auth == null || CurrentUser == null)
+				if (CurrentUser == null)
 				{
-					OnAuthError?.Invoke("No authenticated user available to update the password.");
+					OnAuthError?.Invoke("Nenhum usuário autenticado para atualizar a senha.");
 					return;
 				}
-
 				if (string.IsNullOrWhiteSpace(newPassword))
 				{
-					OnAuthError?.Invoke("New password cannot be empty.");
+					OnAuthError?.Invoke("A nova senha não pode ser vazia.");
 					return;
 				}
-
-				await CurrentUser.UpdatePasswordAsync(newPassword);
+				await SupabaseAuthClient.UpdatePasswordAsync(newPassword);
 				Log("Password updated successfully.");
-				OnAuthInfo?.Invoke("Password updated successfully.");
-			}
-			catch (Firebase.FirebaseException fbEx)
-			{
-				string friendlyError = GetFriendlyErrorMessage(fbEx);
-				LogError($"Password update failed: {friendlyError} (Code: {fbEx.ErrorCode})");
-				OnAuthError?.Invoke(friendlyError);
+				OnAuthInfo?.Invoke("Senha atualizada com sucesso.");
 			}
 			catch (Exception ex)
 			{
-				LogError($"Password update failed: {ex.Message}\nStack: {ex.StackTrace}");
-				OnAuthError?.Invoke("Failed to update password. Please try again.");
+				LogError($"Password update failed: {ex.Message}");
+				OnAuthError?.Invoke("Não foi possível atualizar a senha. Tente novamente.");
 			}
 		}
 
@@ -420,31 +295,28 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				if (Auth == null || CurrentUser == null)
+				if (CurrentUser == null)
 				{
-					OnAuthError?.Invoke("No authenticated user available to update the profile.");
+					OnAuthError?.Invoke("Nenhum usuário autenticado para atualizar o perfil.");
 					return;
 				}
 
 				if (studentProfileData == null || !CloudSyncPolicy.HasRequiredStudentMetadata(studentProfileData.StudentName, studentProfileData.RegistrationNumber, studentProfileData.TeacherName, studentProfileData.TurmaId))
 				{
-					OnAuthError?.Invoke("Fill in name, matrícula and professor before saving the profile.");
+					OnAuthError?.Invoke("Preencha nome, matrícula e professor antes de salvar o perfil.");
 					return;
 				}
 
 				if (!string.Equals(CurrentUser.DisplayName, studentProfileData.StudentName, StringComparison.Ordinal))
 				{
-					UserProfile authProfile = new() { DisplayName = studentProfileData.StudentName };
-					await CurrentUser.UpdateUserProfileAsync(authProfile);
-					await CurrentUser.ReloadAsync();
+					await SupabaseAuthClient.UpdateDisplayNameAsync(studentProfileData.StudentName);
 				}
 
-				AppUserRole suggestedRole = GetSuggestedRoleForEmail(CurrentUser.Email);
 				FirestoreDataManager.UpdateCurrentStudentProfile(studentProfileData,
 					onSuccess: profile =>
 					{
 						ApplyUserProfile(CurrentUser, profile);
-						OnAuthInfo?.Invoke("Profile updated successfully.");
+						OnAuthInfo?.Invoke("Perfil atualizado com sucesso.");
 					},
 					onError: error =>
 					{
@@ -452,87 +324,55 @@ namespace DLS.CloudSync
 						OnAuthError?.Invoke(error);
 					});
 			}
-			catch (Firebase.FirebaseException fbEx)
-			{
-				string friendlyError = GetFriendlyErrorMessage(fbEx);
-				LogError($"Profile update failed: {friendlyError} (Code: {fbEx.ErrorCode})");
-				OnAuthError?.Invoke(friendlyError);
-			}
 			catch (Exception ex)
 			{
-				LogError($"Profile update failed: {ex.Message}\nStack: {ex.StackTrace}");
-				OnAuthError?.Invoke("Failed to update profile. Please try again.");
+				LogError($"Profile update failed: {ex.Message}");
+				OnAuthError?.Invoke("Não foi possível atualizar o perfil. Tente novamente.");
 			}
 		}
 
 		public static void SendVerificationEmail()
 		{
-			if (CurrentUser != null && !CurrentUser.IsEmailVerified)
-			{
-				CurrentUser.SendEmailVerificationAsync();
-				Instance?.Log("Verification email sent");
-			}
+			// GoTrue: verificação por email depende de SMTP configurado no servidor.
+			// Com ENABLE_EMAIL_AUTOCONFIRM=true a conta já entra confirmada.
+			Instance?.Log("Verificação de email gerenciada pelo servidor (autoconfirm).");
 		}
 
-		string GetFriendlyErrorMessage(Firebase.FirebaseException ex)
+		string GetFriendlyErrorMessage(AuthException ex)
 		{
-			string rawMessage = ex?.Message ?? string.Empty;
-			string normalizedMessage = rawMessage.ToLowerInvariant();
-
-			if (normalizedMessage.Contains("operation_not_allowed")
-				|| normalizedMessage.Contains("this operation is not allowed")
-				|| normalizedMessage.Contains("enable this service in the console"))
-			{
-				return "Email/Password auth is disabled in Firebase. Open Authentication > Sign-in method > Email/Password and click Enable.";
-			}
-
-			switch (ex.ErrorCode)
-			{
-				case 17007:
-					return "This email is already registered. Please sign in instead.";
-				case 17008:
-					return "Invalid email address format.";
-				case 17009:
-					return "Password is too weak. Use at least 6 characters.";
-				case 17011:
-					return "No account found with this email. Please create an account first.";
-				case 17012:
-					return "Incorrect password. Please try again.";
-				case 17020:
-					return "Network error. Please check your internet connection.";
-				case 17999:
-					return "Firebase internal error. Make sure Email/Password auth is enabled in Firebase Console.";
-				default:
-					return $"{ex.Message} (Code: {ex.ErrorCode})";
-			}
+			string msg = (ex?.Message ?? string.Empty).ToLowerInvariant();
+			if (msg.Contains("already registered") || msg.Contains("user already registered"))
+				return "Este email já está cadastrado. Faça login.";
+			if (msg.Contains("invalid login credentials"))
+				return "Email ou senha incorretos.";
+			if (msg.Contains("password") && msg.Contains("least"))
+				return "Senha muito curta. Use pelo menos 6 caracteres.";
+			if (msg.Contains("email") && msg.Contains("invalid"))
+				return "Formato de email inválido.";
+			if (ex != null && ex.StatusCode >= 500)
+				return "Erro no servidor de autenticação. Tente novamente em instantes.";
+			return string.IsNullOrWhiteSpace(ex?.Message) ? "Falha na autenticação." : ex.Message;
 		}
 
 		void Log(string message)
 		{
 			if (showDebugLogs)
 			{
-				Debug.Log($"[FirebaseAuth] {message}");
+				Debug.Log($"[Auth] {message}");
 			}
 		}
 
 		void LogError(string message)
 		{
-			Debug.LogError($"[FirebaseAuth] {message}");
+			Debug.LogError($"[Auth] {message}");
 		}
 
 		void OnDestroy()
 		{
 			if (Instance == this)
 			{
-				if (Auth != null)
-				{
-					Auth.StateChanged -= OnAuthStateChanged;
-				}
-
 				Instance = null;
 			}
-
-			FirebaseManager.OnFirebaseReady -= InitializeAuth;
 		}
 	}
 }

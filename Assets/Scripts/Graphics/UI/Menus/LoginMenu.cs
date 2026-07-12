@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using DLS.CloudSync;
-using Firebase.Auth;
 using Seb.Helpers;
 using Seb.Vis;
 using Seb.Vis.UI;
@@ -638,7 +637,7 @@ namespace DLS.Graphics
 			eventsRegistered = true;
 		}
 
-		static void OnLoginSuccess(FirebaseUser user)
+		static void OnLoginSuccess(AuthUser user)
 		{
 			authProviderDisabled = false;
 			showPassword = false;
