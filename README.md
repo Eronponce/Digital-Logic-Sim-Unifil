@@ -11,7 +11,8 @@ A fork of [Sebastian Lague's Digital Logic Sim](https://github.com/SebLague/Digi
 | Windows | community (offline) | `Digital-Logic-Sim-Unifil-Windows-v2.3.0-community.zip` |
 | Windows | turma (cloud) | `Digital-Logic-Sim-Unifil-Windows-v2.3.0-turma.zip` |
 | Windows | turma installer | `DigitalLogicSim-Unifil-Setup-v2.3.0-turma.exe` |
-| Linux | community (offline) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0.zip` |
+| Linux | community (offline) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0-community.zip` |
+| Linux | turma (cloud) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0-turma.zip` |
 
 See the [release notes](docs/13-RELEASE-v2.3.0-2026-07-22.md) for what's new.
 
@@ -102,7 +103,8 @@ Local dev/test builds can be generated directly from Unity batchmode via
 ### Linux build
 
 ```powershell
-.\scripts\package-linux.ps1
+.\scripts\package-linux.ps1              # turma (cloud)
+.\scripts\package-linux.ps1 -Community   # community (offline)
 ```
 
 ---

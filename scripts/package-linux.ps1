@@ -2,7 +2,8 @@ param(
     [ValidateSet("dev", "release")]
     [string]$Configuration = "release",
 
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Community
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,13 +14,16 @@ $buildDir = Join-Path $repoRoot "Builds\Linux"
 $releaseDir = Join-Path $repoRoot "Builds\Release"
 $binaryPath = Join-Path $buildDir "Digital-Logic-Sim-Unifil.x86_64"
 $version = "2.3.0"
-$archiveRootName = "Digital-Logic-Sim-Unifil-Linux-v$version"
+$variant = if ($Community) { "community" } else { "turma" }
+$archiveRootName = "Digital-Logic-Sim-Unifil-Linux-v$version-$variant"
 $stageDir = Join-Path $releaseDir $archiveRootName
 $zipPath = Join-Path $releaseDir "$archiveRootName.zip"
 $readmePath = Join-Path $stageDir "README-Linux.txt"
 
 if (-not $SkipBuild) {
-    & (Join-Path $repoRoot "build-linux.bat") $Configuration
+    $buildArgs = @($Configuration)
+    if ($Community) { $buildArgs += "-Community" }
+    & (Join-Path $repoRoot "build-linux.bat") @buildArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Linux build failed with exit code $LASTEXITCODE."
     }

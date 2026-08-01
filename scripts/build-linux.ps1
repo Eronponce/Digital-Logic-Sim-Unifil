@@ -1,6 +1,8 @@
 param(
     [ValidateSet("dev", "release")]
-    [string]$Configuration = "release"
+    [string]$Configuration = "release",
+
+    [switch]$Community
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +78,9 @@ if (Test-Path $lockFilePath) {
     throw "The project is open in the Unity Editor. Close Unity before running the batch build."
 }
 
-$executeMethod = if ($Configuration -eq "release") {
+$executeMethod = if ($Community) {
+    "DLS.EditorTools.LocalBuildScript.BuildLinuxPlayerCommunityRelease"
+} elseif ($Configuration -eq "release") {
     "DLS.EditorTools.LocalBuildScript.BuildLinuxPlayerRelease"
 } else {
     "DLS.EditorTools.LocalBuildScript.BuildLinuxPlayerDev"
