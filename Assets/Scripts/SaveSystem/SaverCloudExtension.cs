@@ -114,17 +114,17 @@ namespace DLS.SaveSystem
 			}
 		}
 
+		// Os saves na nuvem passam pela Outbox: gravar em disco (feito pelo Saver)
+		// sempre funciona; o upload vira um item na fila que é reenviado quando há
+		// conexão. Isso nunca trava o app nem perde trabalho offline.
+
 		public static void SyncProjectToCloud(ProjectDescription project)
 		{
 			if (!FirebaseAuthManager.IsLoggedIn)
 			{
 				return;
 			}
-
-			FirestoreDataManager.SaveProject(project,
-				onSuccess: () => Debug.Log($"[Cloud] Project '{project.ProjectName}' synced"),
-				onError: error => Debug.LogWarning($"[Cloud] Failed to sync project: {error}")
-			);
+			Outbox.EnqueueSaveProject(project.ProjectName, Serializer.SerializeProjectDescription(project));
 		}
 
 		public static void SyncChipToCloud(ChipDescription chip, string projectName)
@@ -133,11 +133,7 @@ namespace DLS.SaveSystem
 			{
 				return;
 			}
-
-			FirestoreDataManager.SaveChip(chip, projectName,
-				onSuccess: () => Debug.Log($"[Cloud] Chip '{chip.Name}' synced"),
-				onError: error => Debug.LogWarning($"[Cloud] Failed to sync chip: {error}")
-			);
+			Outbox.EnqueueSaveChip(projectName, chip.Name, CloudSyncPolicy.CreateLookupKey(chip.Name), Serializer.SerializeChipDescription(chip));
 		}
 
 		public static void SyncProjectBundleToCloud(ProjectDescription project, Action onSuccess = null, Action<string> onError = null)
@@ -244,11 +240,7 @@ namespace DLS.SaveSystem
 			{
 				return;
 			}
-
-			FirestoreDataManager.DeleteProject(projectName,
-				onSuccess: () => Debug.Log($"[Cloud] Project '{projectName}' deleted from cloud"),
-				onError: error => Debug.LogWarning($"[Cloud] Failed to delete project: {error}")
-			);
+			Outbox.EnqueueDeleteProject(projectName);
 		}
 
 		public static void DeleteChipFromCloud(string chipName, string projectName)
@@ -257,11 +249,37 @@ namespace DLS.SaveSystem
 			{
 				return;
 			}
+			Outbox.EnqueueDeleteChip(projectName, chipName);
+		}
 
-			FirestoreDataManager.DeleteChip(chipName, projectName,
-				onSuccess: () => Debug.Log($"[Cloud] Chip '{chipName}' deleted from cloud"),
-				onError: error => Debug.LogWarning($"[Cloud] Failed to delete chip: {error}")
-			);
+		/// <summary>
+		/// Enfileira todos os projetos/chips locais para upload (via Outbox). Chamado
+		/// após o login baixar/reconciliar da nuvem, para que o trabalho local que
+		/// ainda não subiu vá para a nuvem sozinho, sem travar. Coalescing na fila
+		/// evita duplicatas; a drenagem é gradual e resiliente a offline.
+		/// </summary>
+		public static void EnqueueLocalProjectsForUpload()
+		{
+			if (!FirebaseAuthManager.IsLoggedIn) return;
+
+			try
+			{
+				ProjectDescription[] localProjects = Loader.LoadAllProjectDescriptions();
+				foreach (ProjectDescription project in localProjects)
+				{
+					ChipDescription[] chips = Loader.LoadAvailableChipDescriptions(project, out _);
+					foreach (ChipDescription chip in chips)
+					{
+						Outbox.EnqueueSaveChip(project.ProjectName, chip.Name, CloudSyncPolicy.CreateLookupKey(chip.Name), Serializer.SerializeChipDescription(chip));
+					}
+					Outbox.EnqueueSaveProject(project.ProjectName, Serializer.SerializeProjectDescription(project));
+				}
+				Debug.Log($"[Cloud] Enfileirados {localProjects.Length} projetos locais para upload");
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[Cloud] Falha ao enfileirar projetos locais: {ex.Message}");
+			}
 		}
 
 		public static void SyncAllProjectsToCloud(Action onComplete = null)
@@ -538,10 +556,13 @@ namespace DLS.SaveSystem
 			Saver.SaveProjectDescription(project, syncToCloud: false, updateSaveMetadata: false);
 			CloudSyncDiagnostics.Log("    project description written");
 
+			// NOTE: no per-chip logging here. Each CloudSyncDiagnostics.Log does a
+			// Debug.Log (stack-trace capture) + File.AppendAllText; on a large account
+			// (dezenas de projetos x dezenas de chips) that floods the main thread and
+			// freezes the app on login. The summary count on entry is enough.
 			foreach (ChipDescription chip in chips)
 			{
 				Saver.SaveChip(chip, project.ProjectName, syncToCloud: false);
-				CloudSyncDiagnostics.Log($"    chip written: {chip.Name}");
 			}
 
 			string chipsPath = SavePaths.GetChipsPath(project.ProjectName);

@@ -1,0 +1,12 @@
+<!--
+  Preserva do "managed stripping" as classes que o Newtonsoft.Json desserializa
+  por reflexão no build standalone. Sem isto, o stripper remove os construtores
+  default e a desserialização falha ("Unable to find a constructor to use").
+  Preserva o namespace inteiro DLS.CloudSync (cobre os DTOs de rede aninhados
+  em SupabaseAuthClient e MirrorApiClient).
+-->
+<linker>
+  <assembly fullname="DLS">
+    <namespace fullname="DLS.CloudSync" preserve="all" />
+  </assembly>
+</linker>

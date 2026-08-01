@@ -391,13 +391,8 @@ namespace DLS.CloudSync
 		{
 			try
 			{
-				// Guard: o endpoint de turmas exige usuário autenticado (idToken)
-				if (!FirebaseAuthManager.IsLoggedIn)
-				{
-					onError?.Invoke("Not signed in");
-					return;
-				}
-
+				// Sem guard de login: o endpoint de turmas é público e precisa carregar
+				// na tela de CRIAÇÃO de conta, quando o aluno ainda não está autenticado.
 				List<MirrorApiClient.TurmaItem> items = await MirrorApiClient.LoadTurmasAsync();
 				List<TurmaData> turmas = new(items.Count);
 				foreach (MirrorApiClient.TurmaItem item in items)

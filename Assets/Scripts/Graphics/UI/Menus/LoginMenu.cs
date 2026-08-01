@@ -18,6 +18,9 @@ namespace DLS.Graphics
 		static readonly UIHandle ID_PasswordInput = new("LoginMenu_PasswordInput");
 		static readonly UIHandle ID_DisplayNameInput = new("LoginMenu_DisplayNameInput");
 		static readonly UIHandle ID_RegistrationInput = new("LoginMenu_RegistrationInput");
+		static readonly UIHandle ID_TurmaScroll = new("LoginMenu_TurmaScroll");
+		static readonly UI.ScrollViewDrawElementFunc drawTurmaEntry = DrawTurmaEntry;
+		const int TurmaVisibleRows = 4;
 
 		const string FirebaseAuthProvidersUrl = "https://console.firebase.google.com/project/logisim-eron/authentication/providers";
 
@@ -37,6 +40,7 @@ namespace DLS.Graphics
 		static bool turmasLoading = false;
 		static bool turmasLoaded = false;
 		static bool turmasFailed = false;
+		static float nextTurmaRetryTime = 0f; // auto-retry: reagenda ao falhar
 		static string lastSeededProfileUserId = string.Empty;
 
 		static bool IsCompletingProfile => FirebaseAuthManager.RequiresStudentProfileCompletion;
@@ -44,7 +48,11 @@ namespace DLS.Graphics
 		public static void DrawFullLoginScreen()
 		{
 			SeedProfileFormFromCurrentUserIfNeeded();
-			if (!turmasLoaded && !turmasLoading && !turmasFailed && FirestoreDataManager.IsReady)
+			// Auto-carrega e AUTO-REPETE sozinho (sem depender de clique). Ao falhar,
+			// nextTurmaRetryTime é reagendado 2s à frente; enquanto não carregar, tenta
+			// de novo automaticamente. Cobre a corrida com a restauração de projetos no
+			// login e a indisponibilidade momentânea do túnel.
+			if (!turmasLoaded && !turmasLoading && Time.realtimeSinceStartup >= nextTurmaRetryTime && FirestoreDataManager.IsReady)
 			{
 				LoadTurmas();
 			}
@@ -136,16 +144,27 @@ namespace DLS.Graphics
 			return "Phase 1: email/password login with Firebase sync";
 		}
 
+		// Tab move o foco para o proximo campo da sequencia (o ultimo volta para o primeiro).
+		static void HandleTabNavigation(params UIHandle[] fields)
+		{
+			if (!InputHelper.IsKeyDownThisFrame(KeyCode.Tab)) return;
+
+			for (int i = 0; i < fields.Length; i++)
+			{
+				if (!UI.GetInputFieldState(fields[i]).focused) continue;
+
+				UI.GetInputFieldState(fields[i]).SetFocus(false);
+				UI.GetInputFieldState(fields[(i + 1) % fields.Length]).SetFocus(true);
+				return;
+			}
+		}
+
 		static void DrawSignInForm(ref Vector2 pos, Vector2 inputSize, Vector2 primaryButtonSize, float ySpacing, DrawSettings.UIThemeDLS theme)
 		{
 			DrawEmailField(ref pos, inputSize, ySpacing, theme, "(yourname@email.com)");
 			DrawPasswordField(ref pos, inputSize, ySpacing, theme, string.Empty);
 
-			if (UI.GetInputFieldState(ID_EmailInput).focused && InputHelper.IsKeyDownThisFrame(KeyCode.Tab))
-			{
-				UI.GetInputFieldState(ID_EmailInput).SetFocus(false);
-				UI.GetInputFieldState(ID_PasswordInput).SetFocus(true);
-			}
+			HandleTabNavigation(ID_EmailInput, ID_PasswordInput);
 
 			bool enterOnPassword = UI.GetInputFieldState(ID_PasswordInput).focused &&
 				(InputHelper.IsKeyDownThisFrame(KeyCode.Return) || InputHelper.IsKeyDownThisFrame(KeyCode.KeypadEnter));
@@ -196,6 +215,8 @@ namespace DLS.Graphics
 			DrawRegistrationField(ref pos, inputSize, ySpacing, theme);
 			DrawTurmaSelector(ref pos, inputSize, ySpacing, theme);
 
+			HandleTabNavigation(ID_EmailInput, ID_PasswordInput, ID_DisplayNameInput, ID_RegistrationInput);
+
 			if (Button("Create Account", pos, primaryButtonSize))
 			{
 				if (ValidateInputForSignup())
@@ -224,6 +245,8 @@ namespace DLS.Graphics
 			DrawStudentNameField(ref pos, inputSize, ySpacing, theme);
 			DrawRegistrationField(ref pos, inputSize, ySpacing, theme);
 			DrawTurmaSelector(ref pos, inputSize, ySpacing, theme);
+
+			HandleTabNavigation(ID_DisplayNameInput, ID_RegistrationInput);
 
 			if (Button("Save Profile", pos, primaryButtonSize))
 			{
@@ -320,12 +343,14 @@ namespace DLS.Graphics
 
 			if (!turmasLoaded)
 			{
-				Color statusCol = turmasLoading ? Color.gray : new Color(1f, 0.7f, 0.3f);
-				string msg = turmasLoading ? "Carregando turmas..." : "Sem turmas. Tente novamente.";
-				UI.DrawText(msg, theme.FontRegular, theme.FontSizeRegular * 0.8f, pos, Anchor.Centre, statusCol);
+				// Enquanto não carregou, está sempre carregando ou prestes a tentar de novo
+				// (auto-retry), então a mensagem é sempre "Carregando...". O botão continua
+				// como atalho para forçar uma tentativa imediata.
+				UI.DrawText("Carregando turmas...", theme.FontRegular, theme.FontSizeRegular * 0.8f, pos, Anchor.Centre, Color.gray);
 
-				if (!turmasLoading && Button("Carregar turmas", pos + Vector2.right * (inputSize.x * 0.3f), new Vector2(14f, DrawSettings.ButtonHeight * 0.8f)))
+				if (!turmasLoading && Button("Tentar agora", pos + Vector2.right * (inputSize.x * 0.3f), new Vector2(14f, DrawSettings.ButtonHeight * 0.8f)))
 				{
+					nextTurmaRetryTime = 0f;
 					LoadTurmas();
 				}
 				pos.y -= ySpacing * 1.02f;
@@ -339,23 +364,64 @@ namespace DLS.Graphics
 				return;
 			}
 
-			float buttonWidth = Mathf.Min(inputSize.x / availableTurmas.Count - 0.8f, 16f);
-			float spacing = 1.0f;
-			float totalWidth = buttonWidth * availableTurmas.Count + spacing * (availableTurmas.Count - 1);
-			float startX = pos.x - totalWidth * 0.5f + buttonWidth * 0.5f;
+			// Lista vertical rolável (em vez da fileira horizontal antiga, que
+			// espremia os botões e sobrepunha o texto quando havia várias turmas).
+			// Mostra até TurmaVisibleRows de uma vez; rola para ver o resto.
+			float rowHeight = DrawSettings.ButtonHeight * 0.9f;
+			float rowSpacing = 0.4f;
+			int visibleRows = Mathf.Min(availableTurmas.Count, TurmaVisibleRows);
+			float listHeight = visibleRows * rowHeight + Mathf.Max(0, visibleRows - 1) * rowSpacing;
+			Vector2 topLeft = pos + new Vector2(-inputSize.x * 0.5f, 0f);
 
+			UI.DrawScrollView(ID_TurmaScroll, topLeft, new Vector2(inputSize.x, listHeight), rowSpacing, Anchor.TopLeft, theme.ScrollTheme, drawTurmaEntry, availableTurmas.Count);
+
+			pos.y -= listHeight + ySpacing * 0.5f;
+		}
+
+		static void DrawTurmaEntry(Vector2 topLeft, float width, int index, bool isLayoutPass)
+		{
+			// UI.Button precisa ser chamado nos DOIS passes do ScrollView (medida e
+			// desenho) — ele sempre atualiza PrevBounds/o bounds-scope no final,
+			// mesmo sem renderizar (Seb.Vis.UI.OnFinishedDrawingUIElement roda
+			// incondicionalmente). Pular a chamada no passe de medida (como estava
+			// antes) fazia o ScrollView calcular altura de conteúdo zero, travando
+			// o scroll e tornando as turmas além da primeira inalcançáveis.
+			float rowHeight = DrawSettings.ButtonHeight * 0.9f;
+			ButtonTheme btnTheme = index == selectedTurmaIndex
+				? DrawSettings.ActiveUITheme.ProjectSelectionButtonSelected
+				: DrawSettings.ActiveUITheme.ProjectSelectionButton;
+			if (UI.Button(TurmaEntryLabel(index), btnTheme, topLeft, new Vector2(width, rowHeight), true, false, false, Anchor.TopLeft))
+			{
+				selectedTurmaIndex = index;
+			}
+
+			if (!isLayoutPass)
+			{
+				// Linha fina separando as turmas — sem isto, com o tema de botão
+				// não-selecionado transparente, as linhas ficam parecendo texto solto
+				// empilhado em vez de uma lista de opções clicáveis.
+				Vector2 dividerPos = topLeft + Vector2.down * rowHeight;
+				UI.DrawPanel(dividerPos, new Vector2(width, 0.12f), new Color(1f, 1f, 1f, 0.08f), Anchor.TopLeft);
+			}
+		}
+
+		// DisplayName não é único (duas turmas podem se chamar "Turma A"). Quando
+		// há colisão de nome, junta o professor/projeto para o aluno conseguir
+		// diferenciar qual é qual — sem isto, clicar escolhe um id arbitrário
+		// entre as duplicatas sem nenhuma pista visual de qual foi selecionado.
+		static string TurmaEntryLabel(int index)
+		{
+			TurmaData turma = availableTurmas[index];
+			bool nameIsAmbiguous = false;
 			for (int i = 0; i < availableTurmas.Count; i++)
 			{
-				ButtonTheme themeToUse = i == selectedTurmaIndex
-					? DrawSettings.ActiveUITheme.ProjectSelectionButtonSelected
-					: DrawSettings.ActiveUITheme.ProjectSelectionButton;
-				Vector2 buttonPos = new(startX + i * (buttonWidth + spacing), pos.y);
-				if (UI.Button(availableTurmas[i].DisplayName, themeToUse, buttonPos, new Vector2(buttonWidth, DrawSettings.ButtonHeight * 0.88f), true, false, false, Anchor.Centre))
+				if (i != index && string.Equals(availableTurmas[i].DisplayName, turma.DisplayName, StringComparison.OrdinalIgnoreCase))
 				{
-					selectedTurmaIndex = i;
+					nameIsAmbiguous = true;
+					break;
 				}
 			}
-			pos.y -= ySpacing * 1.02f;
+			return nameIsAmbiguous ? $"{turma.DisplayName} ({turma.TeacherName} · {turma.ProjectName})" : turma.DisplayName;
 		}
 
 		static void LoadTurmas()
@@ -374,6 +440,7 @@ namespace DLS.Graphics
 				turmasLoading = false;
 				turmasLoaded = false;
 				turmasFailed = true;
+				nextTurmaRetryTime = Time.realtimeSinceStartup + 2f; // tenta de novo em 2s
 			});
 		}
 

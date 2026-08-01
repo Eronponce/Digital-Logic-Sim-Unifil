@@ -13,6 +13,9 @@ namespace DLS.Graphics
 		static readonly UIHandle ID_RegistrationInput = new("ProfileMenu_RegistrationInput");
 		static readonly UIHandle ID_NewPasswordInput = new("ProfileMenu_NewPasswordInput");
 		static readonly UIHandle ID_ConfirmPasswordInput = new("ProfileMenu_ConfirmPasswordInput");
+		static readonly UIHandle ID_TurmaScroll = new("ProfileMenu_TurmaScroll");
+		static readonly UI.ScrollViewDrawElementFunc drawTurmaEntry = DrawTurmaEntry;
+		const int TurmaVisibleRows = 4;
 
 		static string studentName = string.Empty;
 		static string registrationNumber = string.Empty;
@@ -29,6 +32,7 @@ namespace DLS.Graphics
 		static int pendingOperations;
 		static bool saveHasError;
 		static string lastSaveError = string.Empty;
+		static bool returnToMainAfterSave;
 
 		public static void Initialize()
 		{
@@ -44,6 +48,7 @@ namespace DLS.Graphics
 			pendingOperations = 0;
 			saveHasError = false;
 			lastSaveError = string.Empty;
+			returnToMainAfterSave = false;
 
 			SetInputFieldText(ID_StudentNameInput, studentName);
 			SetInputFieldText(ID_RegistrationInput, registrationNumber);
@@ -67,17 +72,17 @@ namespace DLS.Graphics
 			Vector2 inputSize = new(Mathf.Clamp(UI.Width * 0.58f, 30f, 52f), DrawSettings.ButtonHeight * 1.15f);
 			Vector2 primaryButtonSize = new(Mathf.Clamp(UI.Width * 0.24f, 14f, 22f), DrawSettings.ButtonHeight);
 			float ySpacing = 2.4f;
-			Vector2 pos = UI.Centre + Vector2.up * 19f;
+			// pos começa abaixo do título fixo "DIGITAL LOGIC SIM" (desenhado por
+			// MainMenu.Draw em todas as telas) — um valor mais alto aqui volta a
+			// sobrepor os dois títulos, como ocorria antes.
+			Vector2 pos = UI.Centre + Vector2.up * 11f;
 
 			if (!turmasLoaded && !turmasLoading && !turmasFailed && FirestoreDataManager.IsReady)
 			{
 				LoadTurmas(FirebaseAuthManager.CurrentUserProfile?.TurmaId ?? string.Empty);
 			}
 
-			UI.DrawText("EDIT PROFILE", theme.FontBold, theme.FontSizeRegular * 1.35f, pos, Anchor.Centre, Color.white);
-			pos.y -= ySpacing * 0.9f;
-
-			UI.DrawText("Update your student profile information", theme.FontRegular, theme.FontSizeRegular * 0.8f, pos, Anchor.Centre, Color.gray);
+			UI.DrawText("Update your student profile information", theme.FontRegular, theme.FontSizeRegular * 0.85f, pos, Anchor.Centre, Color.gray);
 			pos.y -= ySpacing * 0.95f;
 
 			DrawReadOnlyEmail(ref pos, inputSize, ySpacing, theme);
@@ -106,7 +111,12 @@ namespace DLS.Graphics
 				UI.DrawText(statusMessage, theme.FontRegular, theme.FontSizeRegular * 0.82f, pos, Anchor.Centre, messageColor);
 			}
 
-			return backClicked;
+			// Salvo com sucesso: some Salvar/Voltar sozinho, sem esperar o professor
+			// clicar em "Back" — o pedido já terminou (statusMessage só chega aqui
+			// depois que CompletePendingOperation confirma sucesso).
+			bool autoReturn = returnToMainAfterSave;
+			returnToMainAfterSave = false;
+			return backClicked || autoReturn;
 		}
 
 		static void DrawReadOnlyEmail(ref Vector2 pos, Vector2 inputSize, float ySpacing, DrawSettings.UIThemeDLS theme)
@@ -179,24 +189,64 @@ namespace DLS.Graphics
 				return;
 			}
 
-			float buttonWidth = Mathf.Min(inputSize.x / availableTurmas.Count - 0.8f, 16f);
-			float spacing = 1.0f;
-			float totalWidth = buttonWidth * availableTurmas.Count + spacing * (availableTurmas.Count - 1);
-			float startX = pos.x - totalWidth * 0.5f + buttonWidth * 0.5f;
+			// Lista vertical rolável (em vez da fileira horizontal antiga, que
+			// espremia os botões e sobrepunha o texto quando havia várias turmas).
+			// Mostra até TurmaVisibleRows de uma vez; rola para ver o resto.
+			float rowHeight = DrawSettings.ButtonHeight * 0.9f;
+			float rowSpacing = 0.4f;
+			int visibleRows = Mathf.Min(availableTurmas.Count, TurmaVisibleRows);
+			float listHeight = visibleRows * rowHeight + Mathf.Max(0, visibleRows - 1) * rowSpacing;
+			Vector2 topLeft = pos + new Vector2(-inputSize.x * 0.5f, 0f);
 
-			for (int i = 0; i < availableTurmas.Count; i++)
+			UI.DrawScrollView(ID_TurmaScroll, topLeft, new Vector2(inputSize.x, listHeight), rowSpacing, Anchor.TopLeft, theme.ScrollTheme, drawTurmaEntry, availableTurmas.Count);
+
+			pos.y -= listHeight + ySpacing * 0.5f;
+		}
+
+		static void DrawTurmaEntry(Vector2 topLeft, float width, int index, bool isLayoutPass)
+		{
+			// UI.Button precisa ser chamado nos DOIS passes do ScrollView (medida e
+			// desenho) — ele sempre atualiza PrevBounds/o bounds-scope no final,
+			// mesmo sem renderizar (Seb.Vis.UI.OnFinishedDrawingUIElement roda
+			// incondicionalmente). Pular a chamada no passe de medida (como estava
+			// antes) fazia o ScrollView calcular altura de conteúdo zero, travando
+			// o scroll e tornando as turmas além da primeira inalcançáveis.
+			float rowHeight = DrawSettings.ButtonHeight * 0.9f;
+			ButtonTheme btnTheme = index == selectedTurmaIndex
+				? DrawSettings.ActiveUITheme.ProjectSelectionButtonSelected
+				: DrawSettings.ActiveUITheme.ProjectSelectionButton;
+			if (UI.Button(TurmaEntryLabel(index), btnTheme, topLeft, new Vector2(width, rowHeight), !isSavingProfile, false, false, Anchor.TopLeft))
 			{
-				ButtonTheme btnTheme = i == selectedTurmaIndex
-					? DrawSettings.ActiveUITheme.ProjectSelectionButtonSelected
-					: DrawSettings.ActiveUITheme.ProjectSelectionButton;
-				Vector2 buttonPos = new(startX + i * (buttonWidth + spacing), pos.y);
-				if (UI.Button(availableTurmas[i].DisplayName, btnTheme, buttonPos, new Vector2(buttonWidth, DrawSettings.ButtonHeight * 0.88f), !isSavingProfile, false, false, Anchor.Centre))
-				{
-					selectedTurmaIndex = i;
-				}
+				selectedTurmaIndex = index;
 			}
 
-			pos.y -= ySpacing * 1.02f;
+			if (!isLayoutPass)
+			{
+				// Linha fina separando as turmas — sem isto, com o tema de botão
+				// não-selecionado transparente, as linhas ficam parecendo texto solto
+				// empilhado em vez de uma lista de opções clicáveis.
+				Vector2 dividerPos = topLeft + Vector2.down * rowHeight;
+				UI.DrawPanel(dividerPos, new Vector2(width, 0.12f), new Color(1f, 1f, 1f, 0.08f), Anchor.TopLeft);
+			}
+		}
+
+		// DisplayName não é único (duas turmas podem se chamar "Turma A"). Quando
+		// há colisão de nome, junta o professor/projeto para o aluno conseguir
+		// diferenciar qual é qual — sem isto, clicar escolhe um id arbitrário
+		// entre as duplicatas sem nenhuma pista visual de qual foi selecionado.
+		static string TurmaEntryLabel(int index)
+		{
+			TurmaData turma = availableTurmas[index];
+			bool nameIsAmbiguous = false;
+			for (int i = 0; i < availableTurmas.Count; i++)
+			{
+				if (i != index && string.Equals(availableTurmas[i].DisplayName, turma.DisplayName, StringComparison.OrdinalIgnoreCase))
+				{
+					nameIsAmbiguous = true;
+					break;
+				}
+			}
+			return nameIsAmbiguous ? $"{turma.DisplayName} ({turma.TeacherName} · {turma.ProjectName})" : turma.DisplayName;
 		}
 
 		static void DrawPasswordField(ref Vector2 pos, Vector2 inputSize, float ySpacing, DrawSettings.UIThemeDLS theme, string label, UIHandle handle, ref string value)
@@ -389,6 +439,7 @@ namespace DLS.Graphics
 			SetInputFieldText(ID_NewPasswordInput, string.Empty);
 			SetInputFieldText(ID_ConfirmPasswordInput, string.Empty);
 			statusMessage = "Profile updated successfully!";
+			returnToMainAfterSave = true;
 		}
 
 		static void SetInputFieldText(UIHandle id, string value)

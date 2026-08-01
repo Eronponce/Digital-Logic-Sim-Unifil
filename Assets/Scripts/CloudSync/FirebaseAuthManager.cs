@@ -24,6 +24,20 @@ namespace DLS.CloudSync
 		public static bool RequiresStudentProfileCompletion => IsLoggedIn && CurrentUserProfile.RequiresStudentProfileCompletion;
 		public static string CurrentUserRoleLabel => CurrentUserProfile.RoleLabel;
 
+		// True do momento do login até a restauração dos projetos da nuvem terminar.
+		// A UI usa isto para segurar a interação (overlay "Carregando...") no login,
+		// evitando que o aluno clique antes de os projetos aparecerem.
+		public static bool IsRestoringCloudProjects { get; private set; }
+
+		// True do clique em "Sign Out" até o logout terminar de verdade (sync final
+		// da nuvem + limpeza da sessão). Enquanto true, IsLoggedIn ainda é true — a
+		// UI usa esta flag (não IsLoggedIn) para travar a tela com um overlay
+		// "Saindo..." e evitar o bug de "volta pro menu principal sem deslogar":
+		// sem o overlay, a tela de login via NeedsAuthentication()==false (porque
+		// IsLoggedIn ainda não caiu) e voltava direto pro Main antes do logout
+		// terminar de verdade.
+		public static bool IsSigningOut { get; private set; }
+
 		public static event Action<AuthUser> OnLoginSuccess;
 		public static event Action<CloudUserProfile> OnUserProfileReady;
 		public static event Action OnLogout;
@@ -61,6 +75,9 @@ namespace DLS.CloudSync
 
 		async void Start()
 		{
+			// Descobre a URL do servidor (GitHub) antes de qualquer autenticação.
+			await MirrorConfigProvider.EnsureDiscoveredAsync();
+
 			// Em computador compartilhado, só restaura sessão se "manter logado".
 			if (KeepLoggedIn)
 			{
@@ -102,12 +119,20 @@ namespace DLS.CloudSync
 		{
 			ApplyUserProfile(user, profile);
 
+			// Segura a interação até o restore terminar (ver IsRestoringCloudProjects).
+			// onComplete é SEMPRE chamado (não-logado/0 bundles/sucesso/erro), então a
+			// flag nunca fica presa em true.
+			IsRestoringCloudProjects = true;
 			SaverCloudExtension.LoadAllProjectsFromCloud(loadedCount =>
 			{
+				IsRestoringCloudProjects = false;
 				if (loadedCount > 0)
 				{
 					Log($"Loaded {loadedCount} projects from cloud");
 				}
+				// após reconciliar com a nuvem, empurra o estado local para a fila,
+				// para que circuitos que ainda não subiram vão sozinhos (sem travar).
+				SaverCloudExtension.EnqueueLocalProjectsForUpload();
 			});
 
 			OnLoginSuccess?.Invoke(user);
@@ -118,6 +143,9 @@ namespace DLS.CloudSync
 			CurrentUserProfile = profile;
 			SavePaths.UseCloudProfile(user.UserId);
 			Log($"Save profile switched to: {SavePaths.ActiveProfileDataPath}");
+			// carrega a fila de reenvio deste usuário e tenta drenar pendências
+			CloudSaveStatus.Reset();
+			Outbox.ReloadForActiveProfile();
 			OnUserProfileReady?.Invoke(profile);
 		}
 
@@ -173,6 +201,7 @@ namespace DLS.CloudSync
 			}
 
 			Instance.signOutInProgress = true;
+			IsSigningOut = true;
 			Instance.Log("Starting logout process...");
 			SaverCloudExtension.SyncAllProjectsToCloud(() =>
 			{
@@ -181,6 +210,7 @@ namespace DLS.CloudSync
 				SupabaseAuthClient.SignOut();
 				CurrentUserProfile = CloudUserProfile.Offline;
 				SavePaths.UseOfflineProfile();
+				IsSigningOut = false;
 				OnLogout?.Invoke();
 			});
 		}
@@ -202,7 +232,7 @@ namespace DLS.CloudSync
 			catch (Exception ex)
 			{
 				LogError($"Sign in failed: {ex.Message}");
-				OnAuthError?.Invoke("Falha no login. Verifique suas credenciais e tente novamente.");
+				OnAuthError?.Invoke("Não foi possível conectar ao servidor. Verifique sua internet e tente novamente.");
 			}
 		}
 

@@ -4,16 +4,16 @@ A fork of [Sebastian Lague's Digital Logic Sim](https://github.com/SebLague/Digi
 
 ---
 
-## Downloads — v2.2.0
+## Downloads — v2.3.0
 
 | Platform | Variant | Download |
 |----------|---------|----------|
-| Windows | community (offline) | `Digital-Logic-Sim-Unifil-Windows-v2.2.0-community.zip` |
-| Windows | turma (cloud) | `Digital-Logic-Sim-Unifil-Windows-v2.2.0-turma.zip` |
-| Windows | turma installer | `DigitalLogicSim-Unifil-Setup-v2.2.0-turma.exe` |
-| Linux | community (offline) | `Digital-Logic-Sim-Unifil-Linux-v2.2.0.zip` |
+| Windows | community (offline) | `Digital-Logic-Sim-Unifil-Windows-v2.3.0-community.zip` |
+| Windows | turma (cloud) | `Digital-Logic-Sim-Unifil-Windows-v2.3.0-turma.zip` |
+| Windows | turma installer | `DigitalLogicSim-Unifil-Setup-v2.3.0-turma.exe` |
+| Linux | community (offline) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0.zip` |
 
-See the [release notes](docs/12-RELEASE-v2.2.0-2026-06-21.md) for what's new.
+See the [release notes](docs/13-RELEASE-v2.3.0-2026-07-22.md) for what's new.
 
 ---
 
@@ -27,26 +27,45 @@ Suitable for anyone who wants to use the simulator without cloud features.
 Includes email/password authentication and cloud sync of projects/chips.
 Designed for institutions that want students to log in, complete a profile, and have their work saved to the cloud.
 
-> **Backend (2026-07):** o Firebase foi substituído por **Supabase self-hosted**.
-> A autenticação usa Supabase Auth (GoTrue) e os dados são salvos via a API
-> `server-pg` (Postgres). Endpoints em `Assets/Scripts/CloudSync/CloudConfig.cs`
-> (descoberta dinâmica em `MirrorConfigProvider`). Ver `conexao-remota/ARQUITETURA.md`.
-> O SDK do Firebase foi removido do projeto.
+> **Backend (2026-07):** o Firebase foi substituído por **Supabase self-hosted**
+> rodando no servidor Dell. A autenticação usa Supabase Auth (GoTrue) via
+> `SupabaseAuthClient.cs` — REST puro sobre `HttpClient`/`UnityWebRequest`, sem
+> SDK nativo. Os dados (perfil, projetos, chips) são salvos via a API `server-pg`
+> (Postgres) em `MirrorApiClient.cs`. A URL do servidor é descoberta em runtime
+> por `MirrorConfigProvider` (consulta um `config.json` publicado no GitHub, já
+> que o túnel gratuito usado no backend não tem endereço fixo). O SDK do
+> Firebase foi removido por completo do projeto (Auth e Firestore).
+>
+> Contas antigas do Firebase não têm senha portável — quem tinha conta lá
+> recria com o **mesmo email** no Supabase; no primeiro login o servidor religa
+> automaticamente os projetos antigos à conta nova (via `uid_aliases`).
+>
+> Ver `conexao-remota/ARQUITETURA.md` para o desenho completo da infraestrutura.
 
 ---
 
-## What's New in v2.2.0
+## What's New in v2.3.0
 
-- One-tick propagation delay per chip instance (predictable sequential circuits)
-- Wire labels — drag text labels along any wire
-- Wire style menu — per-pin colour and pattern (solid / dashed / double)
-- IEEE standard gate symbols (AND, OR, NOT, etc.) as an alternative to rectangular style
-- Canvas annotations — free-floating text blocks, double-click to edit
-- Copy / paste preserves wire colours and labels
-- Hotkey guide (F1)
-- Cloud authentication and sync (turma variant)
+- **Firebase removed entirely** — cloud backend migrated to self-hosted Supabase
+  (Postgres + GoTrue Auth). No more Firestore/Firebase Auth SDK in the project.
+- Legacy Firebase accounts recreate with the same email and get their old
+  projects/chips relinked automatically on first login.
+- **Offline retry queue (Outbox)** — saves/deletes made while offline are queued
+  and drained automatically once connectivity returns, instead of being lost or
+  hanging forever.
+- Cloud save status indicator (bottom bar): "Salvando...", "Salvo", "Sem
+  conexão — N pendentes", "Erro" — always reflects the real queue state.
+- **Logout no longer looks broken** — it used to flash back to the main screen
+  before the (async) sign-out actually finished. Now a "Saindo..." overlay
+  blocks the screen until it's genuinely done.
+- Edit Profile screen: fixed a title overlapping the persistent header, and
+  saving now returns to the main menu automatically instead of requiring an
+  extra click.
+- Turma picker (login, signup and edit profile) is now a proper scrollable
+  list instead of a cramped single row that broke with more than ~3 turmas.
+- Tab key now moves between fields on the login/signup/profile screens.
 
-Full details: [docs/12-RELEASE-v2.2.0-2026-06-21.md](docs/12-RELEASE-v2.2.0-2026-06-21.md)
+Full details: [docs/13-RELEASE-v2.3.0-2026-07-22.md](docs/13-RELEASE-v2.3.0-2026-07-22.md)
 
 ---
 
@@ -63,21 +82,22 @@ Full details: [docs/12-RELEASE-v2.2.0-2026-06-21.md](docs/12-RELEASE-v2.2.0-2026
 Produces `Builds/Release/Digital-Logic-Sim-Unifil-Windows-vX.Y.Z-community.zip`.
 The Firebase credential file is automatically stripped from the artifact.
 
-### Turma build (with Firebase)
+### Turma build (with cloud sync)
 
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Email/Password** authentication
-3. Enable **Cloud Firestore**
-4. Download your config files and place them:
-   - `google-services.json` → project root
-   - `google-services-desktop.json` → `Assets/StreamingAssets/`
-5. Build:
+No Firebase config needed anymore. The client discovers the backend URL at
+runtime (`MirrorConfigProvider`, reads a `config.json` published on GitHub) and
+authenticates against the self-hosted Supabase instance — the anon key and
+base URL fallback live in `Assets/Scripts/CloudSync/CloudConfig.cs`.
 
 ```powershell
 .\scripts\package-students.ps1
 ```
 
 Produces a zip and a Windows installer under `Builds/Release/`.
+
+Local dev/test builds can be generated directly from Unity batchmode via
+`Assets/Editor/LocalBuildScript.cs` (menu `Build/Build Windows Test App`, or
+`-executeMethod DLS.EditorTools.LocalBuildScript.BuildWindowsPlayerRelease`).
 
 ### Linux build
 
@@ -92,11 +112,23 @@ Produces a zip and a Windows installer under `Builds/Release/`.
 | Path | Purpose |
 |------|---------|
 | `Assets/Scripts/Game/` | Simulation engine, chip logic, interaction |
-| `Assets/Scripts/Graphics/` | Rendering and UI menus |
-| `Assets/Scripts/CloudSync/` | Firebase auth and Firestore sync |
+| `Assets/Scripts/Graphics/` | Rendering and UI menus (`LoginMenu.cs`, `ProfileMenu.cs`, `MainMenu.cs`) |
+| `Assets/Scripts/CloudSync/` | Supabase Auth (`SupabaseAuthClient.cs`) + REST client for `server-pg` (`MirrorApiClient.cs`, `MirrorConfigProvider.cs`), offline retry queue (`Outbox.cs`) |
 | `Assets/Scripts/Description/` | Chip/wire/pin serialisation types |
 | `scripts/` | PowerShell build and packaging scripts |
 | `docs/` | Release notes |
+
+### Cloud sync flow (turma variant)
+
+`FirebaseAuthManager` (name kept for compatibility) drives sign-in/sign-up/logout
+against `SupabaseAuthClient`. On successful auth, `FinalizeSignIn` upserts the
+profile (`PUT /api/users/:uid/profile` — this is also where legacy-account
+relinking fires), then `SaverCloudExtension.LoadAllProjectsFromCloud` restores
+projects while `IsRestoringCloudProjects` blocks interaction behind a loading
+overlay. Logout (`SignOut`) syncs pending local changes to the cloud first,
+then clears the session — `IsSigningOut` blocks the UI with a "Saindo..."
+overlay for the duration, since it's async and `IsLoggedIn` doesn't flip until
+it finishes.
 
 ---
 
@@ -104,4 +136,4 @@ Produces a zip and a Windows installer under `Builds/Release/`.
 
 All core simulation engine work, rendering system, built-in chips, wire editing, undo/redo, bus support, LEDs, ROM, and the overall architecture are [Sebastian Lague's](https://github.com/SebLague/Digital-Logic-Sim) work.
 
-The features listed in v2.2.0 are additions built on top of that base.
+The features listed above are additions built on top of that base.

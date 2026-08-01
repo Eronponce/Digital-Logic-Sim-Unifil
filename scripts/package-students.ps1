@@ -45,7 +45,7 @@ New-Item -ItemType Directory -Force -Path $installerDir | Out-Null
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
 $env:DLS_BUILD_SOURCE_DIR = $buildDir
-$env:DLS_APP_VERSION = "2.2.0"
+$env:DLS_APP_VERSION = "2.3.0"
 
 $versionSuffix = "v$($env:DLS_APP_VERSION)"
 $variant = if ($Community) { "community" } else { "turma" }

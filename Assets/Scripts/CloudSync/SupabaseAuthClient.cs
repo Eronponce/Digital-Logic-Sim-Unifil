@@ -1,6 +1,5 @@
 using System;
-using System.Net.Http;
-using System.Text;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -28,7 +27,6 @@ namespace DLS.CloudSync
 	/// </summary>
 	public static class SupabaseAuthClient
 	{
-		static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
 		const string SessionKey = "DLS_SupabaseSession";
 
 		static string accessToken;
@@ -42,6 +40,39 @@ namespace DLS.CloudSync
 		static string AnonKey => CloudConfig.EffectiveSupabaseAnonKey;
 
 		// ── DTOs ──────────────────────────────────────────────────────────────
+
+		// Os corpos de request usam classes explícitas (e não tipos anônimos):
+		// tipos anônimos ficam fora de qualquer namespace, então o link.xml não os
+		// preserva e o managed stripping do build standalone remove os getters —
+		// o Newtonsoft serializaria "{}" e o GoTrue recusaria o request.
+
+		class CredentialsBody
+		{
+			[JsonProperty("email")] public string Email { get; set; }
+			[JsonProperty("password")] public string Password { get; set; }
+			[JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)] public UserMetadataBody Data { get; set; }
+		}
+
+		class UserMetadataBody
+		{
+			[JsonProperty("displayName")] public string DisplayName { get; set; }
+		}
+
+		class EmailBody
+		{
+			[JsonProperty("email")] public string Email { get; set; }
+		}
+
+		class RefreshTokenBody
+		{
+			[JsonProperty("refresh_token")] public string RefreshToken { get; set; }
+		}
+
+		class UpdateUserBody
+		{
+			[JsonProperty("password", NullValueHandling = NullValueHandling.Ignore)] public string Password { get; set; }
+			[JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)] public UserMetadataBody Data { get; set; }
+		}
 
 		class TokenResponse
 		{
@@ -80,16 +111,21 @@ namespace DLS.CloudSync
 
 		public static async Task<AuthUser> SignInWithPasswordAsync(string email, string password)
 		{
-			var body = new { email, password };
+			await MirrorConfigProvider.EnsureDiscoveredAsync();
+			var body = new CredentialsBody { Email = email, Password = password };
 			var resp = await PostAsync("/token?grant_type=password", body);
 			return ApplyToken(resp);
 		}
 
 		public static async Task<AuthUser> SignUpAsync(string email, string password, string displayName)
 		{
-			object body = string.IsNullOrWhiteSpace(displayName)
-				? new { email, password }
-				: new { email, password, data = new { displayName } };
+			await MirrorConfigProvider.EnsureDiscoveredAsync();
+			var body = new CredentialsBody
+			{
+				Email = email,
+				Password = password,
+				Data = string.IsNullOrWhiteSpace(displayName) ? null : new UserMetadataBody { DisplayName = displayName },
+			};
 			var resp = await PostAsync("/signup", body);
 			// Com autoconfirm, o signup já devolve sessão; senão, faz login em seguida.
 			if (!string.IsNullOrEmpty(resp?.AccessToken))
@@ -101,17 +137,17 @@ namespace DLS.CloudSync
 
 		public static async Task SendPasswordResetAsync(string email)
 		{
-			await PostRawAsync("/recover", new { email });
+			await PostRawAsync("/recover", new EmailBody { Email = email });
 		}
 
 		public static async Task UpdatePasswordAsync(string newPassword)
 		{
-			await PutUserAsync(new { password = newPassword });
+			await PutUserAsync(new UpdateUserBody { Password = newPassword });
 		}
 
 		public static async Task UpdateDisplayNameAsync(string displayName)
 		{
-			await PutUserAsync(new { data = new { displayName } });
+			await PutUserAsync(new UpdateUserBody { Data = new UserMetadataBody { DisplayName = displayName } });
 			if (currentUser != null) currentUser.DisplayName = displayName;
 		}
 
@@ -166,7 +202,7 @@ namespace DLS.CloudSync
 			{
 				throw new Exception("Sessão expirada — faça login novamente.");
 			}
-			var resp = await PostAsync("/token?grant_type=refresh_token", new { refresh_token = refreshToken });
+			var resp = await PostAsync("/token?grant_type=refresh_token", new RefreshTokenBody { RefreshToken = refreshToken });
 			ApplyToken(resp);
 			return accessToken;
 		}
@@ -223,30 +259,27 @@ namespace DLS.CloudSync
 
 		static async Task<string> PostRawAsync(string path, object body)
 		{
-			using var req = new HttpRequestMessage(HttpMethod.Post, Base + path);
-			req.Headers.TryAddWithoutValidation("apikey", AnonKey);
-			req.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
-			using var resp = await http.SendAsync(req);
-			string content = resp.Content == null ? string.Empty : await resp.Content.ReadAsStringAsync();
-			if (!resp.IsSuccessStatusCode)
+			var headers = new Dictionary<string, string> { { "apikey", AnonKey } };
+			UnityHttpResponse resp = await UnityHttp.SendAsync("POST", Base + path, JsonConvert.SerializeObject(body), headers);
+			if (!resp.IsSuccess)
 			{
-				throw new AuthException((int)resp.StatusCode, ExtractError(content));
+				throw new AuthException((int)resp.Status, ExtractError(resp.Body));
 			}
-			return content;
+			return resp.Body;
 		}
 
 		static async Task PutUserAsync(object body)
 		{
 			string token = await GetAccessTokenAsync(false);
-			using var req = new HttpRequestMessage(HttpMethod.Put, Base + "/user");
-			req.Headers.TryAddWithoutValidation("apikey", AnonKey);
-			req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-			req.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
-			using var resp = await http.SendAsync(req);
-			if (!resp.IsSuccessStatusCode)
+			var headers = new Dictionary<string, string>
 			{
-				string content = resp.Content == null ? string.Empty : await resp.Content.ReadAsStringAsync();
-				throw new AuthException((int)resp.StatusCode, ExtractError(content));
+				{ "apikey", AnonKey },
+				{ "Authorization", "Bearer " + token },
+			};
+			UnityHttpResponse resp = await UnityHttp.SendAsync("PUT", Base + "/user", JsonConvert.SerializeObject(body), headers);
+			if (!resp.IsSuccess)
+			{
+				throw new AuthException((int)resp.Status, ExtractError(resp.Body));
 			}
 		}
 

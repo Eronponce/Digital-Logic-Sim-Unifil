@@ -158,7 +158,49 @@ namespace DLS.Graphics
 					break;
 			}
 
+			UpdateCloudRestoreGate();
+			UpdateSignOutGate();
 			LoadingOverlay.Draw();
+		}
+
+		// Mantém o overlay "Saindo..." enquanto o logout está em andamento (sync
+		// final da nuvem + limpeza de sessão) — trava a interação para não deixar
+		// clicar em nada enquanto IsLoggedIn ainda não caiu de verdade. Ao contrário
+		// do gate de restauração, este age em QUALQUER tela: o Sign Out também pode
+		// ser disparado a partir do próprio LoginMenu (tela de completar perfil).
+		static bool signOutGateActive;
+		static void UpdateSignOutGate()
+		{
+			if (FirebaseAuthManager.IsSigningOut)
+			{
+				LoadingOverlay.Show("Saindo...");
+				signOutGateActive = true;
+			}
+			else if (signOutGateActive)
+			{
+				LoadingOverlay.Hide();
+				signOutGateActive = false;
+			}
+		}
+
+		// Mantém o overlay modal "Carregando seus projetos..." enquanto os projetos da
+		// nuvem estão sendo restaurados no login, bloqueando a interação até tudo aparecer.
+		// Só age na tela Main (não no login/perfil) e só desliga o overlay que ELE mesmo
+		// ligou, para não interferir em outros usos do overlay (salvar, popups, etc).
+		static bool cloudRestoreGateActive;
+		static void UpdateCloudRestoreGate()
+		{
+			bool restoring = FirebaseAuthManager.IsRestoringCloudProjects && activeMenuScreen == MenuScreen.Main;
+			if (restoring)
+			{
+				LoadingOverlay.Show("Carregando seus projetos...");
+				cloudRestoreGateActive = true;
+			}
+			else if (cloudRestoreGateActive)
+			{
+				LoadingOverlay.Hide();
+				cloudRestoreGateActive = false;
+			}
 		}
 
 		public static void OnMenuOpened()
@@ -195,6 +237,11 @@ namespace DLS.Graphics
 		static void DrawMainScreen()
 		{
 			if (activePopup != PopupKind.None) return;
+
+			// Segura a interação (não desenha os botões nem a lista) enquanto os projetos
+			// da nuvem restauram no login. O overlay "Carregando seus projetos..." cobre a
+			// tela por cima (ver UpdateCloudRestoreGate). Quando termina, tudo já aparece.
+			if (FirebaseAuthManager.IsRestoringCloudProjects) return;
 
 			DrawSettings.UIThemeDLS theme = DrawSettings.ActiveUITheme;
 			float buttonWidth = 15;
@@ -262,8 +309,14 @@ namespace DLS.Graphics
 					activeMenuScreen = MenuScreen.About;
 					break;
 				case MainMenuAction.Logout:
+					// Não troca de tela aqui: SignOut() é assíncrono (sincroniza a nuvem
+					// antes de encerrar a sessão) e IsLoggedIn só cai quando termina. Trocar
+					// de tela na hora fazia a Login screen ver "ainda logado" e voltar
+					// sozinha pro Main — parecia que o logout não tinha feito nada. Agora
+					// o overlay "Saindo..." (UpdateSignOutGate) trava a tela, e a troca
+					// automática pro Login acontece via NeedsAuthentication() quando o
+					// logout de fato terminar.
 					FirebaseAuthManager.SignOut();
-					activeMenuScreen = MenuScreen.Login;
 					break;
 				case MainMenuAction.SignIn:
 					LoginMenu.ReturnToSignIn();

@@ -1,4 +1,5 @@
 using System;
+using DLS.CloudSync;
 using DLS.Description;
 using DLS.Game;
 using Seb.Helpers;
@@ -72,6 +73,7 @@ namespace DLS.Graphics
 		public static void DrawUI(Project project)
 		{
 			DrawBottomBar(project);
+			DrawAutoSaveStatus();
 
 			if (UIDrawer.ActiveMenu == UIDrawer.MenuType.BottomBarMenuPopup)
 			{
@@ -82,6 +84,49 @@ namespace DLS.Graphics
 			{
 				HandleKeyboardShortcuts();
 			}
+		}
+
+		// Indicador do salvamento na nuvem (derivado da Outbox), canto inferior-esquerdo.
+		// "Salvando (N)..." (branco) / "Sem conexão — N pendentes" (amarelo) /
+		// "Erro..." (vermelho) / "Salvo" (verde, some em ~4s quando a fila zera).
+		const float autoSaveSavedVisibleSeconds = 4f;
+
+		static void DrawAutoSaveStatus()
+		{
+			CloudSaveStatus.State state = CloudSaveStatus.Current;
+
+			string message;
+			Color colour;
+
+			if (state == CloudSaveStatus.State.Idle)
+			{
+				// nada pendente: só mostra "Salvo" (verde) por alguns segundos após zerar
+				if (Time.realtimeSinceStartup - CloudSaveStatus.ClearedAt > autoSaveSavedVisibleSeconds) return;
+				message = "Salvo";
+				colour = new Color(0.45f, 1f, 0.58f);
+			}
+			else
+			{
+				message = CloudSaveStatus.Message;
+				colour = state switch
+				{
+					CloudSaveStatus.State.Saving => Color.white,
+					CloudSaveStatus.State.Offline => new Color(1f, 0.82f, 0.35f),  // amarelo
+					CloudSaveStatus.State.Error => new Color(1f, 0.35f, 0.35f),    // vermelho
+					_ => Color.white
+				};
+			}
+
+			if (string.IsNullOrEmpty(message)) return;
+
+			DrawSettings.UIThemeDLS theme = DrawSettings.ActiveUITheme;
+			float fontSize = theme.FontSizeRegular * 0.75f;
+			Vector2 textSize = Draw.CalculateTextBoundsSize(message.AsSpan(), fontSize, theme.FontRegular);
+			Vector2 panelSize = textSize + new Vector2(1.1f, 0.55f);
+			Vector2 panelBottomLeft = new(buttonSpacing, barHeight + buttonSpacing);
+
+			UI.DrawPanel(panelBottomLeft, panelSize, new Color(0f, 0f, 0f, 0.82f), Anchor.BottomLeft);
+			UI.DrawText(message, theme.FontRegular, fontSize, UI.PrevBounds.Centre, Anchor.TextCentre, colour);
 		}
 
 		static void DrawPopupMenu()
