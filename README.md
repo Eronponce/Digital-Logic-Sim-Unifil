@@ -13,6 +13,14 @@ A fork of [Sebastian Lague's Digital Logic Sim](https://github.com/SebLague/Digi
 | Windows | turma installer | `DigitalLogicSim-Unifil-Setup-v2.3.0-turma.exe` |
 | Linux | community (offline) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0-community.zip` |
 | Linux | turma (cloud) | `Digital-Logic-Sim-Unifil-Linux-v2.3.0-turma.zip` |
+| Mac ⚠️ | community (offline) | `Digital-Logic-Sim-Unifil-Mac-v2.3.0-community.zip` |
+| Mac ⚠️ | turma (cloud) | `Digital-Logic-Sim-Unifil-Mac-v2.3.0-turma.zip` |
+
+> ⚠️ **Build Mac não assinada.** Foi gerada sem acesso a um Mac físico (backend
+> Mono do Unity), então não tem assinatura/notarização da Apple. Na primeira
+> abertura o macOS vai bloquear com "desenvolvedor não identificado" —
+> clique com o botão direito no `.app` → **Abrir** → confirme **Abrir** de
+> novo. Instruções completas dentro do zip (`LEIA-ME-Mac.txt`).
 
 See the [release notes](docs/13-RELEASE-v2.3.0-2026-07-22.md) for what's new.
 
@@ -106,6 +114,20 @@ Local dev/test builds can be generated directly from Unity batchmode via
 .\scripts\package-linux.ps1              # turma (cloud)
 .\scripts\package-linux.ps1 -Community   # community (offline)
 ```
+
+### Mac build (não assinada)
+
+Requer o módulo **Mac Build Support (Mono)** instalado no Editor (baixável
+pelo Unity Hub mesmo a partir de um host Windows — build IL2CPP/assinado
+exigiria rodar o Editor num Mac de verdade, o que este projeto não faz).
+
+```powershell
+.\scripts\package-mac.ps1              # turma (cloud)
+.\scripts\package-mac.ps1 -Community   # community (offline)
+```
+
+Gera um `.app` sem assinatura da Apple — o zip inclui um `LEIA-ME-Mac.txt`
+com o passo a passo pra liberar no Gatekeeper na primeira abertura.
 
 ---
 

@@ -60,6 +60,18 @@ during real classroom testing.
 
 ---
 
+## Mac build (added after initial release, unsigned)
+
+A Mac build was added to this release using Unity's Mono backend (no Mac
+hardware was used to produce it). It is **not signed or notarized by
+Apple** — on first launch, macOS Gatekeeper will block it with a
+"developer cannot be verified" message. This is expected: right-click the
+`.app` → **Open** → confirm **Open** again to run it (see `LEIA-ME-Mac.txt`
+inside the download). It runs natively on Intel Macs and via Rosetta 2 on
+Apple Silicon (M1/M2/M3/M4). A properly signed, native Apple Silicon
+(IL2CPP) build would require building from an actual Mac and isn't
+available yet.
+
 Full architecture notes for anyone standing up their own backend:
 `conexao-remota/ARQUITETURA.md` and
 `Digital-Logic-Sim-Teacher-Web/read-mirror-server/README.md` in the companion

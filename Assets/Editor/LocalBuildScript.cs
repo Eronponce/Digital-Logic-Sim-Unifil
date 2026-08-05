@@ -9,6 +9,7 @@ namespace DLS.EditorTools {
 		const string MainScenePath = "Assets/Build/DLS.unity";
 		const string WindowsBuildOutput = "Builds/Windows/Digital-Logic-Sim-Unifil.exe";
 		const string LinuxBuildOutput = "Builds/Linux/Digital-Logic-Sim-Unifil.x86_64";
+		const string MacBuildOutput = "Builds/Mac/Digital-Logic-Sim-Unifil.app";
 
 		[MenuItem("Build/Build Windows Test App")]
 		public static void BuildWindowsPlayerFromMenu() {
@@ -18,6 +19,11 @@ namespace DLS.EditorTools {
 		[MenuItem("Build/Build Linux Test App")]
 		public static void BuildLinuxPlayerFromMenu() {
 			BuildLinuxPlayerDev();
+		}
+
+		[MenuItem("Build/Build Mac Test App")]
+		public static void BuildMacPlayerFromMenu() {
+			BuildMacPlayerDev();
 		}
 
 		public static void BuildWindowsPlayerDev() {
@@ -42,6 +48,18 @@ namespace DLS.EditorTools {
 
 		public static void BuildLinuxPlayerCommunityRelease() {
 			BuildPlayer(LinuxBuildOutput, BuildTarget.StandaloneLinux64, BuildOptions.None, "Linux (Community)", extraDefines: new[] { "DLS_COMMUNITY" });
+		}
+
+		public static void BuildMacPlayerDev() {
+			BuildPlayer(MacBuildOutput, BuildTarget.StandaloneOSX, BuildOptions.Development | BuildOptions.AllowDebugging, "Mac");
+		}
+
+		public static void BuildMacPlayerRelease() {
+			BuildPlayer(MacBuildOutput, BuildTarget.StandaloneOSX, BuildOptions.None, "Mac");
+		}
+
+		public static void BuildMacPlayerCommunityRelease() {
+			BuildPlayer(MacBuildOutput, BuildTarget.StandaloneOSX, BuildOptions.None, "Mac (Community)", extraDefines: new[] { "DLS_COMMUNITY" });
 		}
 
 		static void BuildPlayer(string relativeOutputPath, BuildTarget target, BuildOptions buildOptions, string platformLabel, string[] extraDefines = null) {
