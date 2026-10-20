@@ -260,7 +260,12 @@ namespace DLS.CloudSync
 		static async Task<string> PostRawAsync(string path, object body)
 		{
 			var headers = new Dictionary<string, string> { { "apikey", AnonKey } };
-			UnityHttpResponse resp = await UnityHttp.SendAsync("POST", Base + path, JsonConvert.SerializeObject(body), headers);
+			string json = JsonConvert.SerializeObject(body);
+			// Lê `Base` (e portanto a URL do servidor) de dentro do lambda — se a
+			// 1ª tentativa falhar por conexão, WithRediscoveryAsync busca a URL
+			// nova antes de rodar o lambda de novo, então o retry já pega a certa.
+			UnityHttpResponse resp = await MirrorConfigProvider.WithRediscoveryAsync(
+				() => UnityHttp.SendAsync("POST", Base + path, json, headers));
 			if (!resp.IsSuccess)
 			{
 				throw new AuthException((int)resp.Status, ExtractError(resp.Body));
@@ -276,7 +281,9 @@ namespace DLS.CloudSync
 				{ "apikey", AnonKey },
 				{ "Authorization", "Bearer " + token },
 			};
-			UnityHttpResponse resp = await UnityHttp.SendAsync("PUT", Base + "/user", JsonConvert.SerializeObject(body), headers);
+			string json = JsonConvert.SerializeObject(body);
+			UnityHttpResponse resp = await MirrorConfigProvider.WithRediscoveryAsync(
+				() => UnityHttp.SendAsync("PUT", Base + "/user", json, headers));
 			if (!resp.IsSuccess)
 			{
 				throw new AuthException((int)resp.Status, ExtractError(resp.Body));

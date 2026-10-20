@@ -51,6 +51,31 @@ namespace DLS.CloudSync
 			inFlight = null;
 		}
 
+		/// <summary>
+		/// Roda `action` uma vez; se falhar por falha de conexão (UnityHttp lança
+		/// "Falha de conexão: ..." quando a requisição nem chega a receber resposta
+		/// — exatamente o caso de uma URL de túnel cacheada que morreu enquanto o
+		/// app ficava aberto), invalida o cache e busca a URL atual de novo ANTES de
+		/// tentar mais uma vez. Sem isto, login/carregar projeto ficavam presos pra
+		/// sempre numa URL morta — só a Outbox (retry de salvamento em 2º plano)
+		/// redescobria, e só quando o erro batia como "sem internet" (não como "URL
+		/// errada", que é o caso real de um túnel caído). Uma tentativa extra só,
+		/// nunca mais que isso — se a redescoberta não resolver, o erro propaga.
+		/// </summary>
+		public static async Task<T> WithRediscoveryAsync<T>(Func<Task<T>> action)
+		{
+			try
+			{
+				return await action();
+			}
+			catch (Exception ex) when (ex.Message.StartsWith("Falha de conexão"))
+			{
+				InvalidateCache();
+				await EnsureDiscoveredAsync();
+				return await action();
+			}
+		}
+
 		static async Task<string> DiscoverAsync()
 		{
 			// 1. cache local — aplica de imediato para não bloquear o boot

@@ -97,10 +97,12 @@ namespace DLS.CloudSync
 				throw new Exception("Sem conexão");
 			}
 
-			// Uma tentativa só. Se falhar, a exceção propaga e a Outbox retenta depois
-			// (evita somar 2× o timeout quando está offline). A re-descoberta da URL
-			// do túnel, se necessária, é feita pela Outbox entre ciclos.
-			UnityHttpResponse response = await SendOnceAsync(method, path, jsonBody, authenticated);
+			// Uma tentativa, mais uma extra com redescoberta de URL se a primeira
+			// falhar por problema de conexão (ver MirrorConfigProvider.WithRediscoveryAsync)
+			// — cobre o caso de a URL do túnel cacheada ter morrido. Se mesmo assim
+			// falhar, a exceção propaga e a Outbox retenta depois.
+			UnityHttpResponse response = await MirrorConfigProvider.WithRediscoveryAsync(
+				() => SendOnceAsync(method, path, jsonBody, authenticated));
 
 			if (response.Status == 401 && authenticated)
 			{
